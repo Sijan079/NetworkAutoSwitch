@@ -1,0 +1,56 @@
+<ui:FluentWindow x:Class="NetworkAutoSwitch.Tray.Fluent.FluentProgramPicker"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Pick Programs" Width="780" Height="640" MinWidth="600" MinHeight="440" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica" WindowCornerPreference="Round">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <ui:TitleBar x:Name="Bar" Grid.Row="0" Title="Pick Programs" ShowMinimize="False" ShowMaximize="False"/>
+        <Grid Grid.Row="1" Margin="24,8,24,8">
+            <ui:TextBox x:Name="Search" PlaceholderText="Search Programs" Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"/>
+            <ui:TextBlock x:Name="LoadingText" Text="Loading..." HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,40,0" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
+        </Grid>
+        <ui:DataGrid x:Name="Grid" Grid.Row="2" Margin="24,0,24,8" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="None"
+                     SelectionUnit="FullRow" RowHeaderWidth="0" Background="Transparent" BorderThickness="0" RowHeight="32" ColumnHeaderHeight="30" CanUserAddRows="False">
+            <ui:DataGrid.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.ContainerStyle>
+                        <Style TargetType="GroupItem">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="GroupItem">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="8,12,0,4" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                            <ItemsPresenter/>
+                                        </StackPanel>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </GroupStyle.ContainerStyle>
+                </GroupStyle>
+            </ui:DataGrid.GroupStyle>
+            <ui:DataGrid.Columns>
+                <DataGridTemplateColumn Header="Program" Width="260">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="4,0">
+                                <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Location" Width="*" Binding="{Binding Location}"/>
+            </ui:DataGrid.Columns>
+        </ui:DataGrid>
+        <Grid Grid.Row="3" Margin="24,8,24,16">
+            <ui:Button x:Name="BrowseBtn" Content="Browse Files" Icon="{ui:SymbolIcon Folder24}" HorizontalAlignment="Left" ToolTip="Pick an .exe from a folder instead."/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button x:Name="OkBtn" Content="Add" Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" IsEnabled="False" IsDefault="True"/>
+                <ui:Button x:Name="CancelBtn" Content="Cancel" Margin="8,0,0,0" IsCancel="True"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

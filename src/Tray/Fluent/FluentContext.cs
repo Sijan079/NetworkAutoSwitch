@@ -15,6 +15,8 @@ sealed class FluentContext
     /// <summary>Raised (on any thread) for every new log line.</summary>
     public event Action<string>? LogLine;
     public void FeedLog(string line) => LogLine?.Invoke(line);
+    /// <summary>Raised after the policy file was written (so other pages can reload).</summary>
+    public event Action? PolicyChanged;
 
     public FluentContext(SwitchEngine engine, Action togglePause, Func<ThemeMode> getTheme, Action<ThemeMode> setTheme, Func<bool> getMute, Action<bool> setMute)
     { Engine = engine; TogglePause = togglePause; GetTheme = getTheme; SetTheme = setTheme; GetMute = getMute; SetMute = setMute; }
@@ -35,6 +37,7 @@ sealed class FluentContext
         if (File.Exists(PolicyPath)) File.Copy(PolicyPath, PolicyPath + ".bak", true);
         File.WriteAllText(PolicyPath, json);
         say("Saving...");
+        PolicyChanged?.Invoke();
         var d = Dispatcher.CurrentDispatcher;
         Task.Run(() =>
         {

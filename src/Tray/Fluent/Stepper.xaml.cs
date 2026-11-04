@@ -11,7 +11,11 @@ public partial class Stepper : System.Windows.Controls.UserControl
         InitializeComponent();
         Minus.Click += (_, _) => Nudge(-Step);
         Plus.Click += (_, _) => Nudge(Step);
+        Box.ValueChanged += (_, _) => ValueChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>Raised when the number changes (typed, + / - or set from code).</summary>
+    public event EventHandler? ValueChanged;
 
     public double Minimum { get => Box.Minimum; set => Box.Minimum = value; }
     public double Maximum { get => Box.Maximum; set => Box.Maximum = value; }

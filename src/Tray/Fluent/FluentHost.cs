@@ -54,6 +54,15 @@ static class FluentHost
         Show(w);
     }
 
+    /// <summary>The "Choose Connections" dialog, over the Fluent window (or alone when it is not open).</summary>
+    public static void ChooseConnections()
+    {
+        EnsureReady();
+        var dlg = new FluentConnectionsDialog(_cx!.Engine);
+        if (_main is { IsVisible: true }) dlg.Owner = _main; else dlg.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        dlg.ShowDialog();
+    }
+
     public static void Quit() { if (_main is not null) { _main.ReallyClose = true; _main.Close(); _main = null; } }
 
     /// <summary>Renders every page to fluent-&lt;page&gt;.png without showing the window (off-screen; RenderTargetBitmap, never a screen capture).</summary>
@@ -70,7 +79,7 @@ static class FluentHost
         foreach (var page in new[] { "Dashboard", "Log", "Policy", "Settings" })
         {
             w.Go(page);
-            Idle(w); Idle(w);
+            for (int i = 0; i < 6; i++) { Idle(w); System.Threading.Thread.Sleep(60); }
             int pw = (int)w.ActualWidth, ph = (int)w.ActualHeight;
             var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(pw, ph, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
             rtb.Render(w);

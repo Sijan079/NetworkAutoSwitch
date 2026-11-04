@@ -108,16 +108,16 @@ sealed class TrayContext : ApplicationContext
         _engine = new SwitchEngine(primary, backup, Paths.DefaultPolicy, enforce: true, execute: !dryRun, interval);
         _engine.Log = m => { Paths.AppendLog(m); _window?.AddLog(m); Fluent.FluentHost.Feed(m); };
         _icon = new NotifyIcon { Icon = _grey, Visible = true, ContextMenuStrip = BuildMenu(), Text = "Network Auto Switch: starting" };
-        _icon.DoubleClick += (_, _) => _window?.ShowWindow("Dashboard");
+        _icon.DoubleClick += (_, _) => Open("Dashboard");
 
         _window = NewWindow();
         Fluent.FluentHost.Init(new Fluent.FluentContext(_engine, TogglePause, () => _mode, SetThemeMode, () => _mute, SetMute));
         _engine.AdaptersChanged += () => { if (!_stopping) _ui.BeginInvoke(RebuildMenu); };
         // Blocks never expire by themselves, so tell the user and make the pop-up open the dashboard (where the Unblock buttons are).
         _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning)); };
-        _icon.BalloonTipClicked += (_, _) => _window?.ShowWindow("Log");
+        _icon.BalloonTipClicked += (_, _) => Open("Log");
         TrayProgram.OnCrash = msg => { if (!_stopping) _ui.BeginInvoke(() => Notify(msg, ToolTipIcon.Error)); };
-        if (showWindow) _window.ShowWindow("Dashboard");
+        if (showWindow) Open("Dashboard");
 
         // --snapshot <folder>: dry-run helper. After 20 s save PNGs of each tab, then quit (no screen capture involved).
         var snap = Environment.GetCommandLineArgs().SkipWhile(a => a != "--snapshot").Skip(1).FirstOrDefault();
@@ -158,6 +158,9 @@ sealed class TrayContext : ApplicationContext
     void SetMute(bool on) { _mute = on; try { AppSettings.Update(x => x.MuteNotifications = on); } catch { } }
 
     // ---------- theme ----------
+    /// <summary>Opens a page in the window of the chosen style (Settings: Style).</summary>
+    void Open(string page) { if (Fluent.FluentHost.Enabled) Fluent.FluentHost.ShowMain(page); else _window?.ShowWindow(page); }
+
     void SetThemeMode(ThemeMode m)
     {
         _mode = m;
@@ -169,6 +172,7 @@ sealed class TrayContext : ApplicationContext
     void ApplyTheme()
     {
         Ui.SetTheme(ThemeSettings.Resolve(_mode));
+        Fluent.FluentHost.ApplyTheme(_mode);
         var old = _window;
         bool wasVisible = old?.Visible ?? false; string tab = old?.CurrentTab ?? "dashboard"; var bounds = old?.Bounds ?? Rectangle.Empty;
         old?.Detach(); old?.CloseForReal();
@@ -195,19 +199,19 @@ sealed class TrayContext : ApplicationContext
         foreach (var (m, text) in new[] { (ConnectionMode.Auto, "Automatic"), (ConnectionMode.StayPrimary, $"Stay On {_primary}"), (ConnectionMode.StayBackup, $"Stay On {_backup}") })
             modeMenu.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => _engine.SetConnectionMode(m)) { Checked = _engine.ConnMode == m });
         modeMenu.DropDownItems.Add(new ToolStripSeparator());
-        modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => _window?.ChooseConnections()));
+        modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => { if (Fluent.FluentHost.Enabled) Fluent.FluentHost.ChooseConnections(); else _window?.ChooseConnections(); }));
 
         var menu = new ContextMenuStrip { Renderer = new ThemedRenderer(), BackColor = Ui.CardBg, ForeColor = Ui.Text, ShowImageMargin = true, Font = new Font("Segoe UI", 9.5f) };
         menu.Items.AddRange(new ToolStripItem[]
         {
             _status, new ToolStripSeparator(),
-            new ToolStripMenuItem("Dashboard", Ui.Glyph(Ui.Home, 16, Ui.Text), (_, _) => _window?.ShowWindow("Dashboard")) { Font = new Font("Segoe UI Semibold", 9.5f) },
+            new ToolStripMenuItem("Dashboard", Ui.Glyph(Ui.Home, 16, Ui.Text), (_, _) => Open("Dashboard")) { Font = new Font("Segoe UI Semibold", 9.5f) },
             _pause,
-            new ToolStripMenuItem("Log", Ui.Glyph(Ui.Document, 16, Ui.Text), (_, _) => _window?.ShowWindow("Log")),
-            new ToolStripMenuItem("Policy", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Policy")),
+            new ToolStripMenuItem("Log", Ui.Glyph(Ui.Document, 16, Ui.Text), (_, _) => Open("Log")),
+            new ToolStripMenuItem("Policy", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Open("Policy")),
             modeMenu,
-            new ToolStripMenuItem("Settings (Fluent Preview)", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Fluent.FluentHost.ShowMain("Settings")),
-            new ToolStripMenuItem("Settings", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Settings")),
+            new ToolStripMenuItem("Fluent Window (Preview)", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Fluent.FluentHost.ShowMain("Dashboard")),
+            new ToolStripMenuItem("Settings", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Open("Settings")),
             new ToolStripSeparator(),
             new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },
             new ToolStripMenuItem("Exit", Ui.Glyph(Ui.Clear, 16, Ui.Text), (_, _) => Quit()),
@@ -228,6 +232,7 @@ sealed class TrayContext : ApplicationContext
 
     void OnStatus(EngineStatus s)
     {
+        if (_stopping) return;        // a status can still be queued when the tray is quitting: the icon is already gone by then
         _lastStatus = s;
         _icon.Icon = IconFor(s);
         string Net(string? n) => string.IsNullOrEmpty(n) ? "" : $" – {n}";
@@ -292,7 +297,7 @@ sealed class TrayContext : ApplicationContext
     {
         _status.Text = "Restoring network settings...";
         Stop();
-        _window?.CloseForReal();
+        _window?.CloseForReal(); Fluent.FluentHost.Quit();
         _icon.Visible = false; _icon.Dispose();
         ExitThread();
     }
