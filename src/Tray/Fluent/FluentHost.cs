@@ -26,11 +26,28 @@ static class FluentHost
         app.Resources.MergedDictionaries.Add(new ThemesDictionary { Theme = ThemeFor(_cx!.GetTheme()) });
         app.Resources.MergedDictionaries.Add(new ControlsDictionary());
         _ready = true;
+        ApplyAccent(AppSettings.Load().Accent);
     }
 
     static ApplicationTheme ThemeFor(ThemeMode m) => ThemeSettings.Resolve(m) ? ApplicationTheme.Dark : ApplicationTheme.Light;
 
-    public static void ApplyTheme(ThemeMode m) { if (_ready) ApplicationThemeManager.Apply(ThemeFor(m)); }
+    /// <summary>The accent colors on offer. "System" follows Windows.</summary>
+    public static readonly (string Name, string Hex)[] Accents =
+    {
+        ("System", ""), ("Blue", "#0078D4"), ("Teal", "#00A5A8"), ("Green", "#16A34A"), ("Purple", "#7C5CE6"),
+        ("Pink", "#DB2777"), ("Orange", "#EA580C"), ("Red", "#DC2626"),
+    };
+
+    public static void ApplyAccent(string name)
+    {
+        if (!_ready) return;
+        var theme = ApplicationThemeManager.GetAppTheme();
+        var hex = Accents.FirstOrDefault(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Hex;
+        if (string.IsNullOrEmpty(hex)) ApplicationAccentColorManager.ApplySystemAccent();
+        else ApplicationAccentColorManager.Apply((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex), theme);
+    }
+
+    public static void ApplyTheme(ThemeMode m) { if (_ready) { ApplicationThemeManager.Apply(ThemeFor(m)); ApplyAccent(AppSettings.Load().Accent); } }
 
     /// <summary>Every modeless Fluent window goes through here: without the keyboard hook the WinForms message loop swallows typing.</summary>
     public static void Show(Window w)

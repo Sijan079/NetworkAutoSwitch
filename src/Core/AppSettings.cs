@@ -20,6 +20,8 @@ public sealed class AppSettings
     public bool MuteNotifications { get; set; } = false;
     /// <summary>"Classic" (the original look) or "Fluent" (the WPF UI look).</summary>
     public string Style { get; set; } = "Classic";
+    /// <summary>Accent color of the Fluent window (buttons, switches, selection): a name from the palette, or "System" to follow Windows.</summary>
+    public string Accent { get; set; } = "System";
 
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 

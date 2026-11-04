@@ -27,6 +27,16 @@
                     </ComboBox>
                 </ui:CardControl>
 
+                <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon Color24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock Text="Accent Color" FontTypography="BodyStrong"/>
+                            <ui:TextBlock TextWrapping="Wrap" Text="The color of buttons, switches and the selected page. System follows Windows." Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ComboBox x:Name="AccentBox" Width="150"/>
+                </ui:CardControl>
+
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon Window24}">
                     <ui:CardControl.Header>
                         <StackPanel>
