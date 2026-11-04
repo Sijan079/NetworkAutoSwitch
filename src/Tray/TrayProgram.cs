@@ -123,7 +123,7 @@ sealed class TrayContext : ApplicationContext
         if (snap is not null)
         {
             var t = new System.Windows.Forms.Timer { Interval = 20000 };
-            t.Tick += (_, _) => { t.Stop(); try { _window!.Show(); _window.SaveSnapshots(snap); } catch (Exception e) { Paths.AppendLog("snapshot failed: " + e.Message); } Quit(); };
+            t.Tick += (_, _) => { t.Stop(); try { _window!.Show(); _window.SaveSnapshots(snap); Fluent.FluentHost.Snapshot(_engine, () => _mode, SetThemeMode, () => _mute, SetMute, Path.Combine(snap, "fluent-settings.png")); } catch (Exception e) { Paths.AppendLog("snapshot failed: " + e.Message); } Quit(); };
             t.Start();
         }
         _engine.Status += s => { if (!_stopping) _ui.BeginInvoke(() => OnStatus(s)); };
@@ -205,6 +205,7 @@ sealed class TrayContext : ApplicationContext
             new ToolStripMenuItem("Log", Ui.Glyph(Ui.Document, 16, Ui.Text), (_, _) => _window?.ShowWindow("Log")),
             new ToolStripMenuItem("Policy", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Policy")),
             modeMenu,
+            new ToolStripMenuItem("Settings (Fluent Preview)", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Fluent.FluentHost.ShowSettings(_engine, () => _mode, SetThemeMode, () => _mute, SetMute)),
             new ToolStripMenuItem("Settings", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Settings")),
             new ToolStripSeparator(),
             new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },

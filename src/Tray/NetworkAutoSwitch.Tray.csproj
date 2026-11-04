@@ -4,12 +4,20 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>NetworkAutoSwitchTray</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>NetworkAutoSwitch.Tray</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Core\NetworkAutoSwitch.Core.csproj" />
     <None Include="..\..\config\policy.json" Link="policy.json" CopyToOutputDirectory="PreserveNewest" />

@@ -15,6 +15,7 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 - *Edit As JSON* on the Policy page (checked before it is accepted).
 
 ### Changed
+- **Fluent preview**: the Settings page rebuilt with the real WPF UI library (tray menu: *Settings (Fluent Preview)*). Trial for a possible full move to WPF UI.
 - The JSON tab is gone from the navigation; the theme button left the Dashboard banner (it is in Settings now).
 - *Choose Connections* closes at once and applies the change in the background.
 
