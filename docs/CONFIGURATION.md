@@ -64,6 +64,7 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 | `RecoverSeconds` | `10` | Seconds the main connection must work, without a single failed check, before moving back from the backup (3 to 600). |
 | `MuteNotifications` | `false` | Hide the tray pop-ups (everything is still logged). |
 | `Welcomed` | missing | `false` on a brand-new install until the first-run welcome has been shown, then `true`. Missing = installed before the welcome existed. |
+| `LogLines` | `2000` | How many lines the Log page keeps on screen (100 to 20000); older lines drop off the bottom. The log file is not shortened. |
 | `BackupCheckSeconds` | `10` | While the main connection is fine, the idle backup is checked this often (1 to 60 s). Every check uses a little mobile data. |
 | `DailyCapMB` | `0` | Daily limit for data through the backup, in MB (`0` = no limit). You are told at 80 % and when it is reached. |
 

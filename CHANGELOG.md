@@ -11,6 +11,7 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 ### Added
 - **Daily data limit for the backup connection** (Settings → Backup Data). You get a pop-up when the backup has carried 80 % of the limit today and when it is reached; the Dashboard shows *Backup Data Today*. The count is everything that goes through the backup adapter, survives restarts, and starts again at midnight.
 - **Setting: how often the idle backup is checked** (default every 10 s).
+- **Setting: how many log lines the Log page keeps on screen** (Settings → Log, default 2000). The oldest lines drop off the bottom, so the newest are always there; the log file itself is not shortened.
 - **Data per program is kept across restarts** (for the same day): the *Backup Data* table now shows today's totals and starts again at midnight.
 - **First-run welcome** on a brand-new install: shows the main and backup connection the app found, and lets you fix them or turn on start at sign-in before anything happens.
 - **Check For Updates** in Settings (About). It asks GitHub only when you click it, and offers a button to open the release page.

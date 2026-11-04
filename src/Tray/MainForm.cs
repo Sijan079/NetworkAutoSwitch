@@ -45,13 +45,14 @@ sealed class MainForm : Form
     readonly ListBox _log = new() { Dock = DockStyle.Fill, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 28, IntegralHeight = false, BorderStyle = BorderStyle.None,
         BackColor = Ui.CardBg, HorizontalScrollbar = true, SelectionMode = SelectionMode.MultiExtended };
     int _logWidth = 600;
-    const int MaxLogRows = 2000;
+    int _maxLogRows = Math.Clamp(AppSettings.Load().LogLines, 100, 20000);      // lines kept on screen (Settings → Log)
     // policy and settings
     readonly List<Label> _policyStatus = new();
     readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Policy page reads it
     readonly PolicyEditor _editor;
     readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
     readonly NoWheelNumeric _cap = new() { Minimum = 0, Maximum = 1_000_000, Increment = 100, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };
+    readonly NoWheelNumeric _logLines = new() { Minimum = 100, Maximum = 20000, Increment = 100, Width = 96 };
     readonly CheckBox _startup = new() { Text = "Start When I Sign In", AutoSize = true, BackColor = Ui.CardBg };
     bool _startupBusy;
     readonly CheckBox _mute = new() { Text = "Mute Notifications", AutoSize = true, BackColor = Ui.CardBg };
@@ -438,13 +439,24 @@ sealed class MainForm : Form
     {
         try
         {
-            var lines = ReadLines(300); lines.Reverse();
+            var lines = ReadLines(Math.Min(300, _maxLogRows)); lines.Reverse();
             _log.BeginUpdate(); _log.Items.Clear();
             foreach (var l in lines) { var e = ToEntry(l); _log.Items.Add(e); GrowWidth(e); }
             _log.EndUpdate();
         }
         catch (Exception e) { _log.Items.Clear(); _log.Items.Add(new LogEntry("", "could not read log file: " + e.Message, LogKind.Error)); }
     }
+
+    /// <summary>The setting changed: remember it, and shorten what is on screen right away if it is now too long.</summary>
+    void SetLogLines(int n)
+    {
+        n = Math.Clamp(n, 100, 20000);
+        if (n == _maxLogRows) return;
+        _maxLogRows = n; AppSettings.Update(x => x.LogLines = n); TrimLog();
+    }
+
+    /// <summary>Drops the OLDEST rows (the bottom of the list) beyond the limit set in Settings.</summary>
+    void TrimLog() { while (_log.Items.Count > _maxLogRows) _log.Items.RemoveAt(_log.Items.Count - 1); }
 
     /// <summary>Called from any thread for every log line. New lines go on top; the view keeps its place if you scrolled down.</summary>
     public void AddLog(string line) => OnUi(() =>
@@ -453,7 +465,7 @@ sealed class MainForm : Form
         int top = _log.TopIndex;
         _log.Items.Insert(0, e);
         if (top > 0) _log.TopIndex = top + 1;
-        while (_log.Items.Count > MaxLogRows) _log.Items.RemoveAt(_log.Items.Count - 1);   // drop the OLDEST rows (bottom)
+        TrimLog();
         GrowWidth(e);
     });
 
@@ -543,7 +555,7 @@ sealed class MainForm : Form
         var status = new Label { AutoSize = true, Padding = new Padding(8, 9, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.Bg };
         _policyStatus.Add(status);
         bar.Controls.Add(Ui.Btn(Ui.Save, "Save", "Check everything, save it and apply it now.", () => { beforeSave?.Invoke(); SavePolicy(); }, BtnKind.Primary));
-        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", () => { _recover.Value = _engine.RecoverSeconds; _cap.Value = _engine.DailyCapMB; _backupCheck.Value = _engine.BackupCheckSeconds; LoadPolicy(); }));
+        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", () => { _recover.Value = _engine.RecoverSeconds; _cap.Value = _engine.DailyCapMB; _backupCheck.Value = _engine.BackupCheckSeconds; _logLines.Value = _maxLogRows; LoadPolicy(); }));
         if (jsonButton) bar.Controls.Add(Ui.Btn(Ui.Code, "Edit As JSON", "Edit the same rules as text (for advanced use). Nothing is saved until you click Save.", EditJson));
         bar.Controls.Add(status);
         return bar;
@@ -597,7 +609,7 @@ sealed class MainForm : Form
     {
         var page = Page();
         // the cards are stacked at fixed heights inside a panel that scrolls, so a small window can still reach every card
-        int[] heights = { 124, 124, 100, 110, 164, 124, 124 };
+        int[] heights = { 124, 124, 100, 110, 164, 110, 124, 124 };
         var grid = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = heights.Length, BackColor = Ui.Bg, Height = heights.Sum() };
         foreach (int h in heights) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
 
@@ -648,6 +660,14 @@ sealed class MainForm : Form
         dflow.Controls.AddRange(new Control[] { L("Check The Idle Backup Every"), _backupCheck, L("s") });
         data.Body.Controls.Add(dflow);
 
+        // the log page keeps this many lines on screen
+        var logCard = new Card(Ui.Document, "Log");
+        logCard.SetHint("How many lines the Log page keeps on screen. When it is full, the oldest lines drop off the bottom, so the newest are always there. The log file itself is not shortened (it starts a fresh file at 1 MB and keeps the previous one as log.txt.old).");
+        _logLines.Value = Math.Min(_logLines.Maximum, Math.Max(_logLines.Minimum, _maxLogRows));
+        var lflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg };
+        lflow.Controls.AddRange(new Control[] { L("Keep The Newest"), _logLines, L("Lines On Screen") });
+        logCard.Body.Controls.Add(lflow);
+
         // about: the version, and a way to ask GitHub whether a newer one exists (only when you click; the app never checks by itself)
         var about = new Card(Ui.Info, "About");
         about.SetHint("Asks GitHub for the latest release when you click the button. Nothing about you is sent, and the app never checks on its own.");
@@ -669,12 +689,12 @@ sealed class MainForm : Form
         aflow.Controls.AddRange(new Control[] { checkBtn, updStatus, openRelease });
         about.Body.Controls.Add(aflow);
 
-        foreach (var c in new Control[] { appearance, switching, notes, startup, data, about }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
-        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(_global, 0, 5); grid.Controls.Add(about, 0, 6);
+        foreach (var c in new Control[] { appearance, switching, notes, startup, data, logCard, about }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
+        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(logCard, 0, 5); grid.Controls.Add(_global, 0, 6); grid.Controls.Add(about, 0, 7);
         var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Ui.Bg };
         scroll.Controls.Add(grid);
         page.Controls.Add(scroll);
-        page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); }));
+        page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); SetLogLines((int)_logLines.Value); }));
         return page;
     }
 
@@ -718,9 +738,11 @@ sealed class MainForm : Form
         foreach (var key in _tabs.Keys())
         {
             _tabs.Select(key); Application.DoEvents();
+            int h0 = Height; if (key == "settings") { Height = 1250; Application.DoEvents(); }      // taller, so every card on the scrolling Settings page is in the picture
             using var bmp = new Bitmap(Width, Height);
             DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height));
             bmp.Save(Path.Combine(folder, key + ".png"));
+            Height = h0;
         }
         // the dashboard while the engine is changing things (grey placeholder bars)
         _tabs.Select("dashboard"); SetLoading(true); Application.DoEvents();

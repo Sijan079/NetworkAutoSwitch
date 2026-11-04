@@ -21,6 +21,8 @@ public sealed class AppSettings
     /// <summary>First-run welcome: false = still to be shown (set on a brand-new install), true = shown, missing = installed before the welcome existed (never shown).</summary>
     public bool? Welcomed { get; set; }
     /// <summary>While the main connection is fine, the idle backup is checked this often (seconds, 1 to 60). Every check on a phone tether uses a little mobile data.</summary>
+    /// <summary>How many lines the Log page keeps on screen (100 to 20000). Older lines drop off the bottom; the log FILE is not shortened (it rotates at 1 MB).</summary>
+    public int LogLines { get; set; } = 2000;
     public int BackupCheckSeconds { get; set; } = 10;
     /// <summary>Daily limit for data through the backup connection, in MB. 0 = no limit. You are told at 80 % and when it is reached.</summary>
     public int DailyCapMB { get; set; } = 0;
