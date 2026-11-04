@@ -50,6 +50,17 @@ static class TrayProgram
             return 0;
         }
 
+        // --restore: put the network back the way the app found it (saved metrics, and remove the app's firewall/QoS rules), then exit.
+        // The uninstaller runs this so nothing of ours is left behind even if the app was killed instead of closed.
+        if (args.Contains("--restore"))
+        {
+            var cmds = MetricSwitcher.RestoreFromState().Concat(BackupPolicy.RemoveCommands()).ToList();
+            int rc = BackupPolicy.RunParallel(cmds, dryRun, m => Paths.AppendLog(m));
+            if (!dryRun && rc == 0) MetricSwitcher.ClearState();
+            Paths.AppendLog($"restore {(dryRun ? "dry-run" : rc == 0 ? "done" : "FAILED")}");
+            return rc;
+        }
+
         // A dry-run copy (testing only, changes nothing) gets its own lock so it can run beside the real one.
         using var single = new Mutex(true, dryRun ? @"Global\NetworkAutoSwitchTray-dry" : @"Global\NetworkAutoSwitchTray", out bool first);
         if (!first) { MessageBox.Show("Network Auto Switch is already running (check the tray).", "Network Auto Switch"); return 0; }
@@ -67,7 +78,7 @@ static class TrayProgram
         TaskScheduler.UnobservedTaskException += (_, e) => { ReportCrash("TASK", e.Exception); e.SetObserved(); };
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayContext(Arg("--primary", "Wi-Fi"), Arg("--backup", "Ethernet 2"), int.Parse(Arg("--interval", "1")), dryRun, args.Contains("--show"), mode, saveTheme: forced.Length == 0));
+        Application.Run(new TrayContext(Arg("--primary", ""), Arg("--backup", ""), int.Parse(Arg("--interval", "1")), dryRun, args.Contains("--show"), mode, saveTheme: forced.Length == 0));
         return 0;
     }
 }
@@ -83,14 +94,15 @@ sealed class TrayContext : ApplicationContext
     Icon _green = null!, _amber = null!, _red = null!, _grey = null!;
     MainForm? _window;
     EngineStatus? _lastStatus;
-    readonly string _primary, _backup;
+    string _primary => _engine.PrimaryName;
+    string _backup => _engine.BackupName.Length > 0 ? _engine.BackupName : "No Backup";
     ThemeMode _mode;
     readonly bool _saveTheme;
     bool _stopping;
 
     public TrayContext(string primary, string backup, int interval, bool dryRun, bool showWindow, ThemeMode mode, bool saveTheme)
     {
-        _primary = primary; _backup = backup; _mode = mode; _saveTheme = saveTheme;
+        _mode = mode; _saveTheme = saveTheme;
         _ = _ui.Handle;
         MakeIcons();
         _engine = new SwitchEngine(primary, backup, Paths.DefaultPolicy, enforce: true, execute: !dryRun, interval);
@@ -99,6 +111,7 @@ sealed class TrayContext : ApplicationContext
         _icon.DoubleClick += (_, _) => _window?.ShowWindow("Dashboard");
 
         _window = NewWindow();
+        _engine.AdaptersChanged += () => { if (!_stopping) _ui.BeginInvoke(RebuildMenu); };
         // Blocks never expire by themselves, so tell the user and make the pop-up open the dashboard (where the Unblock buttons are).
         _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning)); };
         _icon.BalloonTipClicked += (_, _) => _window?.ShowWindow("Log");
@@ -128,10 +141,17 @@ sealed class TrayContext : ApplicationContext
             if (_mode == ThemeMode.System && e.Category == Microsoft.Win32.UserPreferenceCategory.General && !_stopping)
                 _ui.BeginInvoke(() => { if (ThemeSettings.Resolve(_mode) != Ui.Dark) ApplyTheme(); });
         };
-        if (dryRun) Paths.AppendLog("tray started in DRY-RUN mode");
+        Paths.AppendLog($"tray started: {AppInfo.Name} {AppInfo.FullVersion}" + (dryRun ? " (DRY-RUN mode)" : ""));
     }
 
-    MainForm NewWindow() => new(_engine, _primary, _backup, TogglePause, SetThemeMode, () => _mode);
+    /// <summary>The adapters changed (phone plugged in, adapter renamed or chosen by you): the menu's "Stay On ..." entries follow.</summary>
+    void RebuildMenu()
+    {
+        if (_stopping) return;
+        var old = _icon.ContextMenuStrip; _icon.ContextMenuStrip = BuildMenu(); old?.Dispose();
+    }
+
+    MainForm NewWindow() => new(_engine, TogglePause, SetThemeMode, () => _mode);
 
     // ---------- theme ----------
     void SetThemeMode(ThemeMode m)
@@ -170,6 +190,8 @@ sealed class TrayContext : ApplicationContext
         var modeMenu = new ToolStripMenuItem("Mode", Ui.Glyph(Ui.Swap, 16, Ui.Text));
         foreach (var (m, text) in new[] { (ConnectionMode.Auto, "Automatic"), (ConnectionMode.StayPrimary, $"Stay On {_primary}"), (ConnectionMode.StayBackup, $"Stay On {_backup}") })
             modeMenu.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => _engine.SetConnectionMode(m)) { Checked = _engine.ConnMode == m });
+        modeMenu.DropDownItems.Add(new ToolStripSeparator());
+        modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => _window?.ChooseConnections()));
         var theme = new ToolStripMenuItem("Theme", Ui.Glyph(Ui.Brightness, 16, Ui.Text));
         foreach (var (mode, text) in new[] { (ThemeMode.System, "Follow System"), (ThemeMode.Light, "Light"), (ThemeMode.Dark, "Dark") })
             theme.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => SetThemeMode(mode)) { Checked = _mode == mode });
@@ -185,6 +207,7 @@ sealed class TrayContext : ApplicationContext
             modeMenu,
             theme,
             new ToolStripSeparator(),
+            new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },
             new ToolStripMenuItem("Exit", Ui.Glyph(Ui.Clear, 16, Ui.Text), (_, _) => Quit()),
         });
         foreach (ToolStripItem it in menu.Items) { it.BackColor = Ui.CardBg; it.ForeColor = it.Enabled ? Ui.Text : Ui.Muted; it.Padding = new Padding(4, 5, 4, 5); }

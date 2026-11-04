@@ -16,17 +16,28 @@ public static class AdapterProber
     const int IP_UNICAST_IF = 31;
     static readonly string[] Targets = { "8.8.8.8", "9.9.9.9" };
 
-    public static NetworkInterface? Find(string name) =>
-        NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(n =>
-            n.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || n.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>An exact name match wins; only if there is none does a name that merely STARTS with it count
+    /// (so a typed "Ethernet" can never silently mean "Ethernet 2" when a real "Ethernet" exists).</summary>
+    public static NetworkInterface? Find(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var all = NetworkInterface.GetAllNetworkInterfaces();
+        return all.FirstOrDefault(n => n.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ?? all.FirstOrDefault(n => n.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>"adapter down" means Windows itself says the link is down: nothing to wait for, the engine switches at once.</summary>
     public const string AdapterDown = "adapter down";
+    public const string NotFound = "adapter not found";
+    public const string NoBackup = "no backup connected";
+
+    /// <summary>The adapter is gone or its link is down: certain, so the engine does not wait for several failed checks.</summary>
+    public static bool IsLinkDown(string detail) => detail == AdapterDown || detail == NotFound;
 
     public static ProbeResult Probe(string adapterName, int timeoutMs = 1200)
     {
         var nic = Find(adapterName);
-        if (nic is null) return new(adapterName, 0, false, 0, "adapter not found");
+        if (nic is null) return new(adapterName, 0, false, 0, string.IsNullOrWhiteSpace(adapterName) ? NoBackup : NotFound);
         if (nic.OperationalStatus != OperationalStatus.Up) return new(nic.Name, 0, false, 0, AdapterDown);
         int idx = nic.GetIPProperties().GetIPv4Properties().Index;
 

@@ -10,11 +10,14 @@ namespace NetworkAutoSwitch.Tray;
 sealed class MainForm : Form
 {
     readonly SwitchEngine _engine;
-    readonly string _primary, _backup, _policyPath;
+    readonly string _policyPath;
+    string _primary => _engine.PrimaryName;                                              // always the adapters detected right now (they can change while the app runs)
+    string _backup => _engine.BackupName.Length > 0 ? _engine.BackupName : "No Backup";
     readonly Action _togglePause;
     readonly Action<ThemeMode> _setTheme;
     readonly Func<ThemeMode> _getTheme;
     readonly Action<EngineStatus> _statusHandler;
+    readonly Action _adaptersHandler;
 
     // dashboard: banner
     readonly PictureBox _bannerIcon = new() { Width = 48, Height = 48, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.Bg, Dock = DockStyle.Fill };
@@ -51,14 +54,14 @@ sealed class MainForm : Form
     readonly Dictionary<string, Bitmap> _glyphs = new();
     bool _reallyClose;
 
-    public MainForm(SwitchEngine engine, string primary, string backup, Action togglePause, Action<ThemeMode> setTheme, Func<ThemeMode> getTheme)
+    public MainForm(SwitchEngine engine, Action togglePause, Action<ThemeMode> setTheme, Func<ThemeMode> getTheme)
     {
-        _engine = engine; _primary = primary; _backup = backup; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme;
+        _engine = engine; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme;
         _policyPath = Paths.DefaultPolicy;
-        Text = "Network Auto Switch"; Width = 1000; Height = 900; MinimumSize = new Size(860, 640);
+        Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1000; Height = 900; MinimumSize = new Size(860, 640);
         StartPosition = FormStartPosition.CenterScreen; Font = Ui.UiFont(9.5f); BackColor = Ui.Bg; ForeColor = Ui.Text;
         Icon = Ui.AppIcon(Ui.Blue);
-        _cardP = new AdapterCard(Ui.Wifi, primary); _cardB = new AdapterCard(Ui.Ethernet, backup);
+        _cardP = new AdapterCard(Ui.AdapterGlyph(_engine.PrimaryKind), _primary); _cardB = new AdapterCard(Ui.AdapterGlyph(_engine.BackupKind), _backup);
         _ = Handle;
 
         _tabs.AddPage("dashboard", "Dashboard", Ui.Home, DashboardPage());
@@ -70,6 +73,8 @@ sealed class MainForm : Form
 
         _statusHandler = s => OnUi(() => Apply(s));
         _engine.Status += _statusHandler;
+        _adaptersHandler = () => OnUi(OnAdaptersChanged);
+        _engine.AdaptersChanged += _adaptersHandler;
         _refresh.Tick += (_, _) => RefreshUsage();
         _refresh.Start();
         _editor.Connect(() => _engine.Usage.Seen(), (text, error) => Say(text, error));
@@ -80,7 +85,7 @@ sealed class MainForm : Form
     void OnUi(Action a) { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
 
     /// <summary>Stops listening to the engine, so this window can be discarded (used when the theme changes).</summary>
-    public void Detach() { _engine.Status -= _statusHandler; _refresh.Stop(); }
+    public void Detach() { _engine.Status -= _statusHandler; _engine.AdaptersChanged -= _adaptersHandler; _refresh.Stop(); }
 
     Bitmap G(string glyph, Color c, int px = 32)
     {
@@ -193,6 +198,21 @@ sealed class MainForm : Form
         return page;
     }
 
+    /// <summary>The adapters changed (a phone was plugged in, an adapter was renamed or you chose others): card titles and icons follow.</summary>
+    void OnAdaptersChanged()
+    {
+        _cardP.SetTitle(_primary); _cardP.SetIcon(Ui.AdapterGlyph(_engine.PrimaryKind));
+        _cardB.SetTitle(_backup); _cardB.SetIcon(Ui.AdapterGlyph(_engine.BackupKind));
+        _modeBtn.Text = Ui.T(ModeLabel(_engine.ConnMode));
+    }
+
+    /// <summary>Opens the dialog where you can choose the main and backup adapter yourself (or leave them on Automatic).</summary>
+    public void ChooseConnections()
+    {
+        using var dlg = new ConnectionsDialog(_engine);
+        dlg.ShowDialog(this);
+    }
+
     string ModeLabel(ConnectionMode m) => m switch { ConnectionMode.StayPrimary => $"Stay On {_primary}", ConnectionMode.StayBackup => $"Stay On {_backup}", _ => "Automatic" };
 
     /// <summary>Automatic, or locked to one connection (no automatic switching at all).</summary>
@@ -205,6 +225,10 @@ sealed class MainForm : Form
             it.Click += (_, _) => { _engine.SetConnectionMode(mode); _modeBtn.Text = Ui.T(ModeLabel(mode)); _lockBadge.Visible = mode != ConnectionMode.Auto; };
             m.Items.Add(it);
         }
+        m.Items.Add(new ToolStripSeparator());
+        var choose = new ToolStripMenuItem("Choose Connections...", Ui.Glyph(Ui.Settings, 16, Ui.Text)) { BackColor = Ui.CardBg, ForeColor = Ui.Text, Padding = new Padding(4, 6, 4, 6) };
+        choose.Click += (_, _) => ChooseConnections();
+        m.Items.Add(choose);
         return m;
     }
 
@@ -240,8 +264,8 @@ sealed class MainForm : Form
         bool anyOk = s.Primary.Healthy || s.Backup.Healthy;
         if (s.Paused) { _banner.Text = "Paused"; _banner.ForeColor = Ui.Muted; _bannerIcon.Image = G(Ui.Pause, Ui.Muted); }
         else if (!anyOk) { _banner.Text = "No Connection"; _banner.ForeColor = Ui.Red; _bannerIcon.Image = G(Ui.Warning, Ui.Red); }
-        else if (s.Active == Active.Primary) { _banner.Text = _primary; _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.Wifi, Ui.Green); }
-        else { _banner.Text = _backup + "  ·  Backup"; _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.Ethernet, Ui.Amber); }
+        else if (s.Active == Active.Primary) { _banner.Text = _primary; _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.PrimaryKind), Ui.Green); }
+        else { _banner.Text = _backup + "  ·  Backup"; _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.BackupKind), Ui.Amber); }
         UpdatePauseButton();
         _lockBadge.Visible = s.Mode != ConnectionMode.Auto; _modeBtn.Text = Ui.T(ModeLabel(s.Mode));
 
@@ -592,6 +616,14 @@ sealed class MainForm : Form
         pk.DrawToBitmap(pb, new Rectangle(0, 0, pk.Width, pk.Height));
         pb.Save(Path.Combine(folder, "picker.png"));
         pk.Close();
+        // the Choose Connections dialog, the same way
+        using var cd = new ConnectionsDialog(_engine);
+        cd.StartPosition = FormStartPosition.Manual; cd.Location = new Point(-32000, -32000); cd.Opacity = 0;
+        cd.Show(); Application.DoEvents();
+        using var cb = new Bitmap(cd.Width, cd.Height);
+        cd.DrawToBitmap(cb, new Rectangle(0, 0, cd.Width, cd.Height));
+        cb.Save(Path.Combine(folder, "connections.png"));
+        cd.Close();
     }
 
     public void CloseForReal() { _reallyClose = true; Detach(); Close(); }

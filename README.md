@@ -8,7 +8,7 @@ and moves between them for you.
 - **You can lock it** to one connection if you don't want automatic switching.
 
 Windows 10/11 only. Needs administrator rights (it changes network metrics and firewall rules); the tray asks once, or runs
-already elevated via the login task below.
+already elevated through the sign-in task the installer can set up.
 
 ---
 
@@ -39,20 +39,37 @@ The tray icon shows the state (green = main, amber = backup, red = nothing works
 
 ## Install
 
-> **An installer bundle is planned** and will be published under this repository's Releases. Until then, build it from source.
+Download **`NetworkAutoSwitch-Setup-<version>.exe`** from the [Releases](https://github.com/Sijan079/NetworkAutoSwitch/releases) page and run it
+(Windows 10 or 11, 64-bit; **nothing else to install**: the app carries its own .NET). Check the `.sha256` file next to it if you want to verify the download.
 
-Requires **Windows 10/11** and the **.NET 9 SDK** (to build) or the **.NET 9 Desktop Runtime** (to run a published copy).
+- **Start when I sign in** (ticked by default): the app starts by itself 30 seconds after you sign in, already elevated, with no prompt.
+- **Upgrading**: run a newer installer over the old one. It closes the running app the normal way (which puts your network settings back), replaces it, and keeps your settings and policy.
+  It **never installs an older version over a newer one**.
+- **Uninstalling** (Windows *Apps and features*): puts your network settings back, removes the sign-in task, and asks whether to keep your settings, policy and log.
+
+> The first release has not been published yet. Until it is, build from source (below).
+
+### Build from source
+
+Needs the .NET 9 SDK.
 
 ```powershell
 dotnet publish src\Tray -c Release -o dist\Tray
 dist\Tray\NetworkAutoSwitchTray.exe       # Windows asks for administrator rights once, then it sits in the tray
 ```
 
-To start it at every login, create a scheduled task that runs `NetworkAutoSwitchTray.exe` at logon **with highest privileges**
-(that way it starts already elevated, with no prompt). Wait about 30 seconds after login before it starts, so a slow Wi-Fi connect is not mistaken for an outage.
+To stop a running copy from a script: `dist\Tray\NetworkAutoSwitchTray.exe --quit` (no administrator rights needed; it restores your network settings first).
+How releases and the installer are made, and how version numbers work: [docs/RELEASING.md](docs/RELEASING.md). What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-Before replacing a running copy, ask it to exit the normal way, which puts your network settings back:
-`dist\Tray\NetworkAutoSwitchTray.exe --quit` (no administrator rights needed).
+## Your connections
+
+The app **finds your connections by itself**: your main one (Wi-Fi or a wired adapter) and a backup (a phone tethered over USB, Bluetooth or mobile broadband).
+VPNs, virtual machines and the hidden driver layers Windows lists next to every adapter are ignored. It looks again whenever something is plugged in or changes,
+so a phone plugged in later is picked up, and a renamed adapter does not matter.
+
+If you have more than one candidate, or want something specific, use **Mode, then Choose Connections** (in the window or the tray menu) to pick the main and the backup,
+or leave either on *Automatic*. With only one connection there is no backup: the app keeps measuring and tells you, and does not change anything.
+`nas-cli --list-adapters` shows what was found and why.
 
 ## Files and locations
 
@@ -95,29 +112,35 @@ Before replacing a running copy, ask it to exit the normal way, which puts your 
 
 ```
 NetworkAutoSwitch.sln
+Directory.Build.props   the ONE place for the version number (and product details)
+CHANGELOG.md            what changed in each version
 config/        policy.json (the default policy), policy-test.json (a tiny test policy for curl)
-docs/legacy/   probe-adapters.ps1: the original route-based prototype (kept for reference; replaced by the socket probe)
+installer/     NetworkAutoSwitch.iss: the Inno Setup installer script
+docs/          RELEASING.md (version rules and how to release); legacy/probe-adapters.ps1 is the original route-based prototype, kept for reference
+.github/workflows/   ci.yml (build + tests on every push) and release.yml (installer + GitHub release when a version tag is pushed)
 src/
   Core/        NetworkAutoSwitch.Core: everything that is not UI
-                 SwitchEngine     the loop: probe -> decide -> switch -> policy -> restore
+                 SwitchEngine     the loop: detect adapters -> probe -> decide -> switch -> policy -> restore
+                 AdapterDiscovery finds the adapters and picks the main and the backup
                  AdapterProber    the per-adapter health check
                  FailoverMonitor  the switching rules (pure logic)
                  MetricSwitcher   metrics and route preference
                  BackupPolicy / PolicyBuilder   policy model, validation, rules from picked programs
                  DownloadGuard    the download watchdog (pure logic) + ETW byte counter
                  TcpMigrator      resets backup connections so downloads move to Wi-Fi
-                 Stats, LogClassifier, AppSettings, Paths
+                 AppInfo (version and SemVer compare), Stats, LogClassifier, AppSettings, Paths
   Tray/        NetworkAutoSwitch.Tray: the tray app and window (WinForms; custom theme, tabs, cards)
   Cli/         NetworkAutoSwitch.Cli (nas-cli): diagnostics and tests, no UI
-dist/          publish output (not in source control)
+dist/          publish and installer output (not in source control)
 ```
 
 ## Developing and testing
 
 ```powershell
 dotnet build -c Release
-dotnet run -c Release --project src\Cli -- --selftest        # ~90 fast unit tests, no network changes
-dotnet run -c Release --project src\Cli -- --engine-test     # the real engine in dry-run: lock mode and failover (~15 s)
+dotnet run -c Release --project src\Cli -- --selftest        # ~110 fast unit tests, no network changes
+dotnet run -c Release --project src\Cli -- --engine-test     # the real engine in dry-run: lock mode, failover, choosing adapters (~20 s)
+dotnet run -c Release --project src\Cli -- --list-adapters   # read-only: every adapter, its kind, and which two would be used
 dotnet run -c Release --project src\Cli -- --list-conns      # read-only: which programs have connections over the backup
 dotnet run -c Release --project src\Cli -- --enforce --ticks 0            # dry-run: prints what it WOULD do
 dotnet run -c Release --project src\Cli -- --enforce --execute --ticks 0  # live (administrator terminal)
@@ -126,6 +149,7 @@ dotnet run -c Release --project src\Cli -- --enforce --execute --ticks 0  # live
 The tray has test helpers that never touch your network or screen:
 `NetworkAutoSwitchTray.exe --dry-run --snapshot <folder>` renders every page to PNG files (`--theme dark|light`), and
 `--ui-test <file>` drives the add-a-rule screens in code and writes the outcome to a file.
+Passing `--primary <name>` or `--backup <name>` to the tray or the CLI fixes an adapter instead of detecting it.
 
 ## Known limits
 
@@ -133,4 +157,5 @@ The tray has test helpers that never touch your network or screen:
 - A **brief dropout of about 4 s** is enough to trigger a switch (that is the price of fast detection); switching back is deliberately slower.
 - Download **speed limits** are not possible with built-in Windows tools (only upload caps); the watchdog blocks instead.
 - Connections that are not heavy and not on the watch list (for example a game session) stay on the backup until they reconnect on their own.
-- IPv4 only. The backup in the tested setup has no IPv6 internet route.
+- IPv4 only.
+- It manages **two** connections at a time (a main and a backup). With three or more real adapters, you choose which two in *Choose Connections*.

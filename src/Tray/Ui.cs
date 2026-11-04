@@ -73,7 +73,7 @@ static class Ui
         Refresh = "", OpenFile = "", Save = "", Undo = "", Unlock = "", Lock = "", Swap = "",
         Clock = "", Home = "", Document = "", Settings = "", Download = "", Warning = "",
         Info = "", Chart = "", Data = "", Folder = "", Code = "", Shield = "", Check = "",
-        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "";
+        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "", Phone = "";
 
     static readonly string IconFont = PickFont();
     static string PickFont()
@@ -99,6 +99,9 @@ static class Ui
     }
 
     public static Icon AppIcon(Color _) => Logo.Icon();
+
+    /// <summary>The icon that matches what an adapter is: Wi-Fi waves, a network plug, or a phone.</summary>
+    public static string AdapterGlyph(AdapterKind k) => k switch { AdapterKind.WiFi => Wifi, AdapterKind.Tether => Phone, _ => Ethernet };
 
     // ---- Title Case for every label (names such as HoYoPlay or Wi-Fi are left alone) ----
     static readonly HashSet<string> Small = new(StringComparer.OrdinalIgnoreCase) { "a", "an", "the", "of", "for", "to", "in", "on", "and", "or", "per", "with", "at", "by", "from", "as" };
@@ -303,6 +306,7 @@ class Card : Panel
     }
 
     public void SetTitle(string t) => _title.Text = Ui.T(t);
+    public void SetIcon(string glyph) => _icon.Image = Ui.Glyph(glyph, 18, Ui.Muted);
 
     public void AddHeaderButton(string glyph, string tip, Action click)
     {

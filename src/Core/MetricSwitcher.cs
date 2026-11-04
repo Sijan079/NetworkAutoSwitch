@@ -68,9 +68,12 @@ public static class MetricSwitcher
     public static List<string> RestoreCommands(IEnumerable<SavedMetric> saved)
     {
         var list = saved.ToList();
-        var cmds = list.Select(s => s.Automatic
+        // An adapter that is gone right now (a phone that was unplugged) cannot be restored and does not need to be: that one case is not an error.
+        // Any OTHER failure still fails loudly. Every command is independent, so one missing adapter can never stop the others.
+        static string Guard(string cmd) => $"try {{ {cmd} -ErrorAction Stop }} catch {{ if ($_.CategoryInfo.Category -ne 'ObjectNotFound') {{ throw }} }}; exit 0";
+        var cmds = list.Select(s => Guard(s.Automatic
             ? $"Set-NetIPInterface -InterfaceAlias {Q(s.Adapter)} -AddressFamily IPv4 -AutomaticMetric Enabled"
-            : $"Set-NetIPInterface -InterfaceAlias {Q(s.Adapter)} -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric {s.Metric}").ToList();
+            : $"Set-NetIPInterface -InterfaceAlias {Q(s.Adapter)} -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric {s.Metric}")).ToList();
         cmds.AddRange(list.Select(s => SetDefaultRouteMetric(s.Adapter, 0)));    // leave no route metric of ours behind
         return cmds;
     }

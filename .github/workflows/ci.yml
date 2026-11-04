@@ -1,0 +1,31 @@
+name: CI
+
+# Runs on every push to main and on every pull request: build, unit tests, and the version/changelog rules.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Version rules (see docs/RELEASING.md)
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$') { throw "'$version' in Directory.Build.props is not a valid SemVer version." }
+          if ((Get-Content CHANGELOG.md -Raw) -notmatch "(?m)^## \[$([regex]::Escape($version))\]") { throw "CHANGELOG.md has no section '## [$version]'. Add one (or move [Unreleased] into it) before changing the version." }
+          "version $version OK"
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Unit tests
+        run: dotnet run -c Release --no-build --project src/Cli -- --selftest

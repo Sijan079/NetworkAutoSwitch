@@ -1,0 +1,68 @@
+name: Release
+
+# Runs when a version tag such as v0.1.0 is pushed: checks the tag, tests, builds the installer, and publishes the GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Check that the tag matches the version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          $tag = '${{ github.ref_name }}'
+          if ($tag -ne "v$version") { throw "The tag '$tag' does not match Version '$version' in Directory.Build.props (expected 'v$version')." }
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$') { throw "'$version' is not a valid SemVer version." }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Unit tests
+        run: dotnet run -c Release --project src/Cli -- --selftest
+
+      - name: Publish the app (self-contained, no .NET needed on the user's PC)
+        run: dotnet publish src/Tray -c Release -r win-x64 --self-contained true -p:DebugType=none -o dist/publish
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" installer\NetworkAutoSwitch.iss
+          if ($LASTEXITCODE -ne 0) { throw 'The installer build failed.' }
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $f = Get-Item "dist/installer/NetworkAutoSwitch-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($f.Name)" | Out-File "$($f.FullName).sha256" -Encoding ascii
+          "SHA-256: $hash"
+
+      - name: Release notes from CHANGELOG.md
+        shell: pwsh
+        run: |
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, '(?ms)^## \[' + [regex]::Escape($env:VERSION) + '\][^\r\n]*\r?\n(.*?)(?=^## \[|\z)')
+          if (-not $m.Success) { throw "CHANGELOG.md has no section '## [$env:VERSION]'. Add it before tagging." }
+          $m.Groups[1].Value.Trim() + "`n`nThe SHA-256 checksum of the installer is in the attached .sha256 file." | Set-Content release-notes.md -Encoding utf8
+
+      - name: Publish the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # a version with a tag such as -beta.1 is a pre-release: it is never offered as the latest release
+          $kind = if ($env:VERSION -match '-') { '--prerelease' } else { '--latest' }
+          gh release create "${{ github.ref_name }}" `
+            "dist/installer/NetworkAutoSwitch-Setup-$env:VERSION.exe" "dist/installer/NetworkAutoSwitch-Setup-$env:VERSION.exe.sha256" `
+            --title "Network Auto Switch $env:VERSION" --notes-file release-notes.md $kind

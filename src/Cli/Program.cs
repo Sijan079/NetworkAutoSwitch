@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using NetworkAutoSwitch.Core;
 
 // Usage: nas-cli [--primary "Wi-Fi"] [--backup "Ethernet 2"] [--interval 5] [--ticks 6] [--selftest]
@@ -29,7 +30,20 @@ if (args.Contains("--etw-debug"))
     return 0;
 }
 
-string primary = Arg("--primary", "Wi-Fi"), backup = Arg("--backup", "Ethernet 2");
+string primary = Arg("--primary", ""), backup = Arg("--backup", "");   // "" = detect automatically
+var found = AdapterDiscovery.Suggest(AdapterDiscovery.Detect());
+string backupName = backup.Length > 0 ? backup : found.Backup ?? "";
+
+// --list-adapters: READ-ONLY. Shows every adapter, what kind Windows says it is, and which two the app would use.
+if (args.Contains("--list-adapters"))
+{
+    var all = AdapterDiscovery.Detect();
+    Console.WriteLine($"{"Name",-34}{"Kind",-14}{"Up",-5}{"Gateway",-9}{"IPv4",-17}Description");
+    foreach (var a in all.OrderBy(a => a.Kind)) Console.WriteLine($"{a.Name,-34}{AdapterDiscovery.KindLabel(a.Kind),-14}{(a.IsUp ? "yes" : "no"),-5}{(a.HasGateway ? "yes" : "no"),-9}{a.Ipv4,-17}{a.Description}");
+    Console.WriteLine($"\nmain connection:   {(primary.Length > 0 ? primary + " (chosen)" : found.Primary ?? "none found")}");
+    Console.WriteLine($"backup connection: {(backup.Length > 0 ? backup + " (chosen)" : found.Backup ?? "none found")}");
+    return 0;
+}
 
 // --engine-test: runs the real engine in dry-run (no changes to Windows) with a "main connection" that never has internet, to prove
 // that Automatic mode fails over and that a locked mode does NOT. Uses a temporary settings file.
@@ -38,7 +52,11 @@ if (args.Contains("--engine-test"))
     string tmp = Path.Combine(Path.GetTempPath(), "nas-engine-test-" + Guid.NewGuid().ToString("N") + ".json");
     var logLines = new List<string>(); int fails = 0;
     void Check(string name, bool ok) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}"); if (!ok) fails++; }
-    var eng = new SwitchEngine("ZeroTier", "Ethernet 2", Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
+    // the test needs a HEALTHY adapter to fail over to: use whichever real adapter has working internet right now (whatever it is called)
+    string? testBackup = AdapterDiscovery.Candidates(AdapterDiscovery.Detect()).Select(a => a.Name).FirstOrDefault(n => AdapterProber.Probe(n).Healthy);
+    if (testBackup is null) { Console.WriteLine("SKIP  failover and lock tests: no real adapter has working internet right now"); testBackup = "Ethernet 2"; }
+    else Console.WriteLine($"(using '{testBackup}' as the healthy backup for this test)");
+    var eng = new SwitchEngine("ZeroTier", testBackup, Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
     eng.Log = l => { lock (logLines) logLines.Add(l); };
     EngineStatus? last = null; eng.Status += s => last = s;
     using var cts0 = new CancellationTokenSource();
@@ -63,6 +81,26 @@ if (args.Contains("--engine-test"))
     Check("the chosen mode is remembered in the settings file", AppSettings.Load(tmp).ConnectionMode == ConnectionMode.Auto);
 
     cts0.Cancel(); try { await run; } catch { }
+
+    // adapters are detected, not hard-coded; a choice made while running takes effect and is announced
+    var eng2 = new SwitchEngine("", "", Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
+    var real = AdapterDiscovery.Candidates(AdapterDiscovery.Detect());
+    Check("auto-detect: with no names given, a main connection is found by itself (" + eng2.PrimaryName + ")", eng2.PrimaryName.Length > 0 && real.Any(a => a.Name == eng2.PrimaryName));
+    Check("auto-detect: the main connection is never a virtual adapter", AdapterDiscovery.Detect().All(a => a.Name != eng2.PrimaryName || a.Kind != AdapterKind.Virtual));
+    if (real.Count >= 2)
+    {
+        int changes = 0; eng2.AdaptersChanged += () => changes++;
+        string pick1 = real[0].Name, pick2 = real[1].Name;
+        eng2.SetAdapterChoice(pick2, pick1);
+        Check($"choice: choosing '{pick2}' as main and '{pick1}' as backup takes effect at once", eng2.PrimaryName == pick2 && eng2.BackupName == pick1);
+        Check("choice: the engine announces the change (so the window and menu update)", changes >= 1);
+        Check("choice: it is remembered in the settings file", AppSettings.Load(tmp).PrimaryAdapter == pick2 && AppSettings.Load(tmp).BackupAdapter == pick1);
+        eng2.SetAdapterChoice(pick1, pick1);
+        Check("choice: the same adapter for both is refused (the backup is left empty)", eng2.PrimaryName == pick1 && eng2.BackupName == "");
+        eng2.SetAdapterChoice(null, null);
+        Check("choice: back to Automatic detects again", eng2.PrimaryName.Length > 0 && AppSettings.Load(tmp).PrimaryAdapter == "");
+    }
+    else Console.WriteLine("SKIP  choice tests (this PC has fewer than two real adapters)");
     File.Delete(tmp);
     Console.WriteLine(fails == 0 ? "ENGINE TEST PASSED" : $"{fails} FAILED");
     return fails;
@@ -72,10 +110,10 @@ if (args.Contains("--engine-test"))
 // onto the main connection when it returns. Nothing is reset or changed.
 if (args.Contains("--list-conns"))
 {
-    var ips = AdapterProber.Find(backup)?.GetIPProperties().UnicastAddresses.Select(u => u.Address).ToList() ?? new();
+    var ips = AdapterProber.Find(backupName)?.GetIPProperties().UnicastAddresses.Select(u => u.Address).ToList() ?? new();
     var pol = BackupPolicy.Load(Arg("--policy", Paths.DefaultPolicy));
     var conns = TcpMigrator.Established(ips);
-    Console.WriteLine($"{conns.Count} established connection(s) over '{backup}' ({string.Join(", ", ips.Where(i => i.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))})");
+    Console.WriteLine($"{conns.Count} established connection(s) over '{backupName}' ({string.Join(", ", ips.Where(i => i.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))})");
     foreach (var g in conns.GroupBy(c => ProcPath.Of(c.Pid) ?? $"pid {c.Pid}").OrderByDescending(g => g.Count()))
     {
         string name = Path.GetFileName(g.Key);
@@ -94,7 +132,7 @@ if (execute && !BackupPolicy.IsAdmin())
 if (args.Contains("--policy-apply") || args.Contains("--policy-remove"))
 {
     var cmds = args.Contains("--policy-apply")
-        ? BackupPolicy.ApplyCommands(BackupPolicy.Load(policyFile), AdapterProber.Find(backup)?.Name ?? backup)
+        ? BackupPolicy.ApplyCommands(BackupPolicy.Load(policyFile), AdapterProber.Find(backupName)?.Name ?? backupName)
         : BackupPolicy.RemoveCommands();
     return BackupPolicy.Run(cmds, !execute);
 }
@@ -262,6 +300,55 @@ static class SelfTest
         Check("add: a clashing rule name gets a number (Steam 2)", clash.Rule!.Name == "Steam 2");
         Check("watched: a program listed in a rule (and in its folder) is covered", PolicyBuilder.IsCovered(@"C:\Program Files (x86)\Steam\steam.exe", existing));
         Check("watched: same name in another folder, or an unlisted program, is not covered", !PolicyBuilder.IsCovered(@"D:\other\steam.exe", existing) && !PolicyBuilder.IsCovered(@"C:\x\notepad.exe", existing));
+        // restoring must be best-effort: an unplugged phone must never stop the firewall rules from being removed
+        var gone = MetricSwitcher.RestoreCommands(new[] { new SavedMetric("No Such Adapter 9", true, 25) });
+        Check("restore: an adapter that no longer exists is NOT an error (real PowerShell run)", BackupPolicy.RunParallel(gone, false, _ => { }) == 0);
+        string marker = Path.Combine(Path.GetTempPath(), "nas-restore-marker-" + Guid.NewGuid().ToString("N"));
+        int worst = BackupPolicy.RunParallel(new[] { "exit 1", $"Set-Content -LiteralPath '{marker}' ok; exit 0" }, false, _ => { });
+        Check("restore: when one command fails, the others STILL run (and the failure is reported)", worst != 0 && File.Exists(marker));
+        if (File.Exists(marker)) File.Delete(marker);
+
+        // adapter detection, using the REAL descriptions seen on a PC with two Wi-Fi adapters, a phone tether and lots of driver layers
+        AdapterKind K2(string d, NetworkInterfaceType t = NetworkInterfaceType.Ethernet) => AdapterDiscovery.Classify(d, t);
+        Check("detect: a Wi-Fi card is Wi-Fi", K2("MediaTek Wi-Fi 6 MT7921 Wireless LAN Card", NetworkInterfaceType.Wireless80211) == AdapterKind.WiFi);
+        Check("detect: a phone's USB tether (RNDIS) is a tether", K2("Remote NDIS based Internet Sharing Device") == AdapterKind.Tether && K2("Apple Mobile Device Ethernet") == AdapterKind.Tether && K2("Bluetooth Device (Personal Area Network)") == AdapterKind.Tether);
+        Check("detect: driver layers listed next to a real adapter are NOT adapters (and 'Filter' does not look like 'LTE')",
+            K2("Realtek 8811CU Wireless LAN 802.11ac USB NIC-WFP Native MAC Layer LightWeight Filter-0000", NetworkInterfaceType.Wireless80211) == AdapterKind.Virtual
+            && K2("MediaTek Wi-Fi 6 MT7921 Wireless LAN Card-QoS Packet Scheduler-0000", NetworkInterfaceType.Wireless80211) == AdapterKind.Virtual
+            && K2("ZeroTier Virtual Port-Npcap Packet Driver (NPCAP)-0000") == AdapterKind.Virtual);
+        Check("detect: VPNs, virtual machines, WARP, kernel debugger and Wi-Fi Direct are virtual",
+            K2("ZeroTier Virtual Port") == AdapterKind.Virtual && K2("Cloudflare WARP Interface Tunnel", NetworkInterfaceType.Tunnel) == AdapterKind.Virtual && K2("Hyper-V Virtual Ethernet Adapter") == AdapterKind.Virtual
+            && K2("Microsoft Kernel Debug Network Adapter") == AdapterKind.Virtual && K2("Microsoft Wi-Fi Direct Virtual Adapter", NetworkInterfaceType.Wireless80211) == AdapterKind.Virtual);
+        Check("detect: cellular modems are tethers, wired cards are Ethernet", K2("Sierra Wireless EM7455", NetworkInterfaceType.Wwanpp2) == AdapterKind.Tether && K2("Realtek PCIe GbE Family Controller", NetworkInterfaceType.GigabitEthernet) == AdapterKind.Ethernet);
+        AdapterInfo A(string n, string d, AdapterKind k, bool up, bool gw) => new(n, d, k, up, gw, up ? "10.0.0.2" : "");
+        var thisPc = new List<AdapterInfo> {   // this PC: built-in Wi-Fi + USB Wi-Fi dongle, tether unplugged, Bluetooth, virtual things
+            A("Wi-Fi 2", "Realtek 8811CU Wireless LAN 802.11ac USB NIC", AdapterKind.WiFi, true, true),
+            A("Wi-Fi", "MediaTek Wi-Fi 6 MT7921 Wireless LAN Card", AdapterKind.WiFi, true, true),
+            A("Ethernet 2", "Remote NDIS based Internet Sharing Device", AdapterKind.Tether, false, false),
+            A("Bluetooth Network Connection", "Bluetooth Device (Personal Area Network)", AdapterKind.Tether, false, false),
+            A("ZeroTier One", "ZeroTier Virtual Port", AdapterKind.Virtual, true, true) };
+        Check("suggest: with two connected Wi-Fi adapters the built-in one is main, the USB dongle is not", AdapterDiscovery.Suggest(thisPc).Primary == "Wi-Fi");
+        Check("suggest: the USB/RNDIS tether is preferred over Bluetooth for the backup, even when unplugged", AdapterDiscovery.Suggest(thisPc).Backup == "Ethernet 2");
+        Check("suggest: virtual adapters (ZeroTier) are never chosen", !new[] { AdapterDiscovery.Suggest(thisPc).Primary, AdapterDiscovery.Suggest(thisPc).Backup }.Contains("ZeroTier One"));
+        Check("suggest: a choice already in use is kept (the dongle stays main if it was main)", AdapterDiscovery.Suggest(thisPc, "Wi-Fi 2", "Ethernet 2").Primary == "Wi-Fi 2");
+        Check("suggest: if the remembered adapter is gone, it falls back to detection", AdapterDiscovery.Suggest(thisPc.Where(a => a.Name != "Wi-Fi").ToList(), "Wi-Fi", "Ethernet 2").Primary == "Wi-Fi 2");
+        var wired = new List<AdapterInfo> { A("Wi-Fi", "Intel Wi-Fi 6", AdapterKind.WiFi, true, true), A("Ethernet", "Realtek PCIe GbE", AdapterKind.Ethernet, true, true) };
+        Check("suggest: no phone: wired is main, Wi-Fi is the backup", AdapterDiscovery.Suggest(wired) is ("Ethernet", "Wi-Fi"));
+        Check("suggest: only one connection: no backup (null), not an invented one", AdapterDiscovery.Suggest(new List<AdapterInfo> { A("Wi-Fi", "Intel Wi-Fi 6", AdapterKind.WiFi, true, true) }) is ("Wi-Fi", null));
+        Check("suggest: nothing at all: nothing chosen", AdapterDiscovery.Suggest(new List<AdapterInfo>()) is (null, null));
+        var plugged = AdapterDiscovery.Suggest(thisPc.Append(A("Ethernet 3", "Samsung Mobile USB RNDIS", AdapterKind.Tether, true, true)).ToList(), "Wi-Fi", null);
+        Check("suggest: a phone is plugged in LATER: the connected one becomes the backup and main stays put", plugged.Backup == "Ethernet 3" && plugged.Primary == "Wi-Fi");
+
+        // versioning: the build's own version is valid SemVer, and precedence follows the SemVer 2.0 spec
+        Check("version: this build has a valid SemVer version (" + AppInfo.FullVersion + ")", AppInfo.IsValid(AppInfo.Version) && AppInfo.Version != "0.0.0");
+        var order = new[] { "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0" };   // the example order from semver.org
+        Check("version: prerelease order matches the SemVer 2.0 spec example", Enumerable.Range(0, order.Length - 1).All(i => AppInfo.Compare(order[i], order[i + 1]) < 0 && AppInfo.Compare(order[i + 1], order[i]) > 0));
+        Check("version: numbers compare as numbers (0.9.0 < 0.10.0 < 1.0.0), not as text", AppInfo.Compare("0.9.0", "0.10.0") < 0 && AppInfo.Compare("0.10.0", "1.0.0") < 0);
+        Check("version: build metadata (+abc) is ignored, equal versions are equal", AppInfo.Compare("1.2.3+abc", "1.2.3+def") == 0 && AppInfo.Compare("1.2.3", "1.2.3") == 0);
+        Check("version: junk is rejected", !AppInfo.IsValid("1.2") && !AppInfo.IsValid("v1.2.3") && !AppInfo.IsValid("01.2.3") && !AppInfo.IsValid("1.2.3-") && AppInfo.IsValid("2.0.0-rc.1+build.5"));
+        Check("version: an unusable one throws instead of guessing", ThrowsFormat(() => AppInfo.Compare("1.2", "1.2.3")));
+        bool ThrowsFormat(Action a) { try { a(); return false; } catch (FormatException) { return true; } }
+
         // fast outage detection + locking to one connection
         var fm = new FailoverMonitor(3, 10);
         Check("fast: a dead LINK switches at once (no waiting for 3 failures)", fm.Observe(false, true, primaryLinkDown: true) is { Changed: true, Active: Active.Backup });

@@ -24,7 +24,9 @@ public sealed class SwitchEngine
     PolicyFile _policy = new(new());
     DownloadGuard _guard = new(Array.Empty<AppRule>());
     EtwNetSource? _etw;
-    string _pName = "", _bName = "";
+    string _pName = "", _bName = "";                     // the adapters in use right now (found by detection, unless you or a command-line argument chose them)
+    AdapterKind _pKind = AdapterKind.Other, _bKind = AdapterKind.Other;
+    string _userPrimary = "", _userBackup = "";           // saved choice of the user; "" = detect automatically
     bool _touched, _applied;   // _touched: originals saved. _applied: our metrics are in place right now
     volatile bool _paused;
 
@@ -37,6 +39,12 @@ public sealed class SwitchEngine
     public NetUsage Usage { get; } = new();
     public string PrimaryName => _pName;
     public string BackupName => _bName;
+    public AdapterKind PrimaryKind => _pKind;
+    public AdapterKind BackupKind => _bKind;
+    public string UserPrimary => _userPrimary;
+    public string UserBackup => _userBackup;
+    /// <summary>Raised when the main or backup adapter changes (a phone was plugged in, an adapter was renamed, or you chose different ones).</summary>
+    public event Action? AdaptersChanged;
     public bool Live => _execute;
     public Active CurrentActive => _mon.Active;
 
@@ -85,15 +93,63 @@ public sealed class SwitchEngine
             bool onBackup = _enforce && _touched && _mon.Active == Active.Backup && !_paused;
             if (onBackup) { StopWatch(); BackupPolicy.Run(BackupPolicy.RemoveCommands(), !_execute, Log); }
             _policy = fresh; _guard = new DownloadGuard(_policy.BackupRules, _policy.Defaults);
-            if (onBackup) { BackupPolicy.Run(BackupPolicy.ApplyCommands(_policy, _bName), !_execute, Log); StartWatch(); }
+            if (onBackup && _bName.Length > 0) { BackupPolicy.Run(BackupPolicy.ApplyCommands(_policy, _bName), !_execute, Log); StartWatch(); }
             Log("policy reloaded" + (onBackup ? " and re-applied on the backup" : ""));
         }
     }
 
     public SwitchEngine(string primary, string backup, string policyFile, bool enforce, bool execute, int intervalSec, string? settingsFile = null)
-    { _primaryArg = primary; _backupArg = backup; _policyFile = policyFile; _enforce = enforce; _execute = execute; _interval = intervalSec; _settingsFile = settingsFile; _mode = AppSettings.Load(settingsFile).ConnectionMode; }
+    { _primaryArg = primary; _backupArg = backup; _policyFile = policyFile; _enforce = enforce; _execute = execute; _interval = intervalSec; _settingsFile = settingsFile;
+      var saved = AppSettings.Load(settingsFile); _mode = saved.ConnectionMode; _userPrimary = saved.PrimaryAdapter ?? ""; _userBackup = saved.BackupAdapter ?? ""; _pName = saved.LastPrimary ?? ""; _bName = saved.LastBackup ?? "";
+      ResolveAdapters(initial: true); }
 
     string Mode => !_enforce ? "decide-only" : _execute ? "ENFORCE (live)" : "enforce DRY-RUN";
+
+    static string? First(string? a, string? b) => !string.IsNullOrWhiteSpace(a) ? a : !string.IsNullOrWhiteSpace(b) ? b : null;
+
+    /// <summary>Works out which adapters are the main and the backup connection right now. Priority: a name given on the command line,
+    /// then your saved choice, then detection (which keeps what is already in use while it still exists).
+    /// If the pair changes while the app is managing the network, the old pair is put back first, so nothing is left half-changed.</summary>
+    public void ResolveAdapters(bool initial = false)
+    {
+        var all = AdapterDiscovery.Detect();
+        var (sp, sb) = AdapterDiscovery.Suggest(all, _pName, _bName);
+        string p = First(_primaryArg, _userPrimary) ?? sp ?? _pName;
+        string b = First(_backupArg, _userBackup) ?? sb ?? "";
+        if (b.Equals(p, StringComparison.OrdinalIgnoreCase)) b = "";
+        AdapterKind Kind(string n) => all.FirstOrDefault(a => a.Name.Equals(n, StringComparison.OrdinalIgnoreCase))?.Kind ?? AdapterKind.Other;
+
+        bool changed;
+        lock (_gate)
+        {
+            _pKind = Kind(p); _bKind = Kind(b);
+            changed = p != _pName || b != _bName;
+            if (changed)
+            {
+                if (!initial)
+                {
+                    Log($"adapters changed: main '{_pName}' -> '{p}', backup '{_bName}' -> '{(b.Length > 0 ? b : "none")}'");
+                    Cleanup();                           // put the OLD pair back (their saved metrics) before switching to the new one
+                    _mon = FreshMonitor();
+                }
+                _pName = p; _bName = b; _applied = false;
+                AppSettings.Update(s => { s.LastPrimary = p; s.LastBackup = b; }, _settingsFile);
+            }
+        }
+        if (changed && !initial) AdaptersChanged?.Invoke();
+    }
+
+    /// <summary>Choose the adapters yourself ("" or null = detect that one automatically). Remembered across restarts.</summary>
+    public void SetAdapterChoice(string? primary, string? backup)
+    {
+        lock (_gate)
+        {
+            _userPrimary = primary ?? ""; _userBackup = backup ?? "";
+            AppSettings.Update(s => { s.PrimaryAdapter = _userPrimary; s.BackupAdapter = _userBackup; }, _settingsFile);
+        }
+        ResolveAdapters();
+        _nudge.Release();
+    }
 
     /// <summary>Automatic = the app switches by itself. Otherwise it is locked to one connection and never switches on its own.</summary>
     public ConnectionMode ConnMode => _mode;
@@ -122,8 +178,7 @@ public sealed class SwitchEngine
     /// <summary>Runs until ticks are used up (0 = forever) or the token is cancelled. Always restores on exit.</summary>
     public async Task RunAsync(int ticks, CancellationToken ct)
     {
-        _pName = AdapterProber.Find(_primaryArg)?.Name ?? _primaryArg;
-        _bName = AdapterProber.Find(_backupArg)?.Name ?? _backupArg;
+        ResolveAdapters(initial: true);
         _policy = BackupPolicy.Load(_policyFile);
         _guard = new DownloadGuard(_policy.BackupRules, _policy.Defaults);
         if (_mode != ConnectionMode.Auto) { _locked = _mode == ConnectionMode.StayBackup ? Active.Backup : Active.Primary; _mon.Reset(_locked); }
@@ -137,15 +192,17 @@ public sealed class SwitchEngine
         {
             for (int t = 1; (ticks == 0 || t <= ticks) && !ct.IsCancellationRequested; t++)
             {
-                var p = Task.Run(() => AdapterProber.Probe(_primaryArg), CancellationToken.None);
-                var b = Task.Run(() => AdapterProber.Probe(_backupArg), CancellationToken.None);
+                ResolveAdapters();       // a phone plugged in, an adapter renamed or removed: noticed within a second
+                string pn = _pName, bn = _bName;
+                var p = Task.Run(() => AdapterProber.Probe(pn), CancellationToken.None);
+                var b = Task.Run(() => AdapterProber.Probe(bn), CancellationToken.None);
                 var (pr, br) = (await p, await b);
                 Decision d;
                 lock (_gate)
                 {
                     if (_mode == ConnectionMode.Auto)
                     {
-                        d = _mon.Observe(pr.Healthy, br.Healthy, primaryLinkDown: pr.Detail == AdapterProber.AdapterDown);
+                        d = _mon.Observe(pr.Healthy, br.Healthy, primaryLinkDown: AdapterProber.IsLinkDown(pr.Detail));
                         if (_enforce && !_paused)
                         {
                             if (d.Changed) Enforce(d.Active, moveRunning: d.Active == Active.Primary);          // a real switch (back to main: also move running downloads)
@@ -189,12 +246,16 @@ public sealed class SwitchEngine
     void Enforce(Active a, bool moveRunning)
     {
         if (a == Active.Primary) StopWatch();
-        if (_execute && !_touched) { MetricSwitcher.SaveOriginals(_pName, _bName); _touched = true; }
-        var cmds = a == Active.Backup ? MetricSwitcher.PreferCommands(_bName, _pName).Concat(BackupPolicy.ApplyCommands(_policy, _bName)).ToList()
-                                      : MetricSwitcher.PreferCommands(_pName, _bName).Concat(BackupPolicy.RemoveCommands()).ToList();
+        // With only ONE connection there is nothing to prefer over anything: the metric commands (and the backup rules) are skipped.
+        bool both = _pName.Length > 0 && _bName.Length > 0;
+        if (_execute && both && !_touched) { MetricSwitcher.SaveOriginals(_pName, _bName); _touched = true; }
+        var cmds = new List<string>();
+        if (both) cmds.AddRange(a == Active.Backup ? MetricSwitcher.PreferCommands(_bName, _pName) : MetricSwitcher.PreferCommands(_pName, _bName));
+        if (a == Active.Backup) { if (_bName.Length > 0) cmds.AddRange(BackupPolicy.ApplyCommands(_policy, _bName)); }
+        else cmds.AddRange(BackupPolicy.RemoveCommands());
         BackupPolicy.RunParallel(cmds, !_execute, Log);      // independent commands: all at once, so the switch is as fast as one command
         _applied = true;
-        if (_execute) VerifyRoute(a == Active.Backup ? _bName : _pName, a == Active.Backup ? _pName : _bName);
+        if (_execute && both) VerifyRoute(a == Active.Backup ? _bName : _pName, a == Active.Backup ? _pName : _bName);
         if (a == Active.Backup) StartWatch();
         else if (moveRunning) MoveRunningToPrimary();
     }
@@ -247,7 +308,9 @@ public sealed class SwitchEngine
         if (watched.Count == 0) return;
         string desc = string.Join(", ", watched.Select(r => $"{r.Name} >{_policy.MbFor(r)}MB/{_policy.WindowFor(r)}s" + (_policy.UsesGlobal(r) ? "" : " (custom)")));
         if (!_execute) { Log($"  # (would start download watchdog: {desc})"); return; }
-        var ips = AdapterProber.Find(_bName)!.GetIPProperties().UnicastAddresses
+        var bnic = AdapterProber.Find(_bName);
+        if (bnic is null) { Log("  [watchdog] cannot start: the backup adapter is not there"); return; }
+        var ips = bnic.GetIPProperties().UnicastAddresses
             .Where(u => u.Address.AddressFamily == AddressFamily.InterNetwork).Select(u => u.Address).ToList();
         _etw = new EtwNetSource(ips, (path, bytes) => { Usage.Add(path, bytes); var a = _guard.Record(path, bytes, DateTime.UtcNow); if (a is not null) Task.Run(() => { Act(a); WatchdogBlocked?.Invoke(a); }); });
         Log($"  [watchdog] started: {desc}");
@@ -274,7 +337,7 @@ public sealed class SwitchEngine
             if (_touched)
             {
                 Log("Restoring original metrics and removing rules...");
-                BackupPolicy.Run(MetricSwitcher.RestoreFromState().Concat(BackupPolicy.RemoveCommands()), false, Log);
+                BackupPolicy.RunParallel(MetricSwitcher.RestoreFromState().Concat(BackupPolicy.RemoveCommands()), false, Log);   // every command runs; one failure cannot skip the others
                 MetricSwitcher.ClearState(); _touched = false; _applied = false;
             }
         }

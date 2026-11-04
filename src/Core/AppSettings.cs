@@ -8,6 +8,12 @@ public sealed class AppSettings
 {
     public string Theme { get; set; } = "System";
     public string Mode { get; set; } = "Auto";
+    /// <summary>Adapter names chosen by the user. Empty = detect automatically.</summary>
+    public string PrimaryAdapter { get; set; } = "";
+    public string BackupAdapter { get; set; } = "";
+    /// <summary>What detection chose last time (used only to keep the choice stable across restarts).</summary>
+    public string LastPrimary { get; set; } = "";
+    public string LastBackup { get; set; } = "";
 
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 
