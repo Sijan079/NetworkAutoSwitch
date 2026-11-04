@@ -25,7 +25,4 @@ First release. Everything below is new.
 - **Network names** (for example `SNcial_5G`) on the connection cards, the Dashboard banner and the tray status.
 - **Loading placeholders**: while the app changes the network (for example after you swap main and backup) the cards show grey bars until the first new measurement arrives.
 - *Edit As JSON* on the Policy page (checked before it is accepted).
-
-- **VPNs such as Cloudflare WARP no longer look like an outage.** They refuse the internet check on a single connection (`AccessDenied`), which made both connections show Down and could cause a false switch to the backup. The app now checks the connection in use through the VPN and the other one by its gateway, shows a *VPN: Limited Checks* badge, and waits longer before each new try of moving back if the main connection fails again soon after.
-- A VPN tunnel on top of the two connections is no longer reported as a routing failure.
-- A crash when the tray quit while a status update was still queued.
+- **Works with VPNs such as Cloudflare WARP.** They refuse the internet check on a single connection, which would look like an outage. The app then checks the connection in use through the VPN and the other one by its gateway, shows a *VPN: Limited Checks* badge, and waits longer before each new try of moving back if the main connection fails again soon after.
