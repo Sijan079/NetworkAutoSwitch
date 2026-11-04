@@ -19,7 +19,7 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ### Changed
 - While the main connection is fine, the idle backup is now checked every 10 s instead of every second, which saves mobile data on a phone tether. Going to the backup is just as fast: it is checked at once when the main connection starts failing.
-- The *VPN: Limited Checks* badge is now just *VPN* (the tooltip explains it), and the Dashboard's Session card fits a fourth tile.
+- The *VPN: Limited Checks* badge is now just *VPN*. Its tooltip, and the docs, now say how to get exact checks behind WARP (exclude `8.8.8.8` and `9.9.9.9` from the tunnel), and the Dashboard's Session card fits a fourth tile.
 
 ## [0.1.0] - 2026-11-04
 

@@ -84,4 +84,5 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 - **Network looks odd after a crash or a forced kill**: in an administrator terminal run
   `dotnet run --project src\Cli -- --restore --execute` (puts back the saved metrics and removes the app's firewall and QoS rules).
 - **A program is blocked and should not be**: Dashboard → Blocked → *Unblock* (choose how long to leave it alone), or remove it from the Policy.
-- **The dashboard shows "VPN: Limited Checks"**: a VPN refuses the check on a single connection. The app still works, see [ARCHITECTURE.md](ARCHITECTURE.md#vpns).
+- **The dashboard shows a "VPN" badge**: a VPN refuses the check on a single connection. The app still works with less precise checks (see [ARCHITECTURE.md](ARCHITECTURE.md#vpns)). **Exact checks behind WARP.** Add the two addresses the app checks, `8.8.8.8` and `9.9.9.9`, to WARP's *Exclude IPs* list (Preferences → Advanced → Split Tunnels, or from a terminal: `warp-cli tunnel ip add 8.8.8.8` and `warp-cli tunnel ip add 9.9.9.9`). They then bypass the tunnel, the per-connection check works again, and the badge disappears by itself.
+  The side effect: traffic to those two addresses (for example DNS, if you use Google's or Quad9's) is no longer protected by WARP. To undo: `warp-cli tunnel ip remove 8.8.8.8` and `warp-cli tunnel ip remove 9.9.9.9`.

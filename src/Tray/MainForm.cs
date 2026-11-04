@@ -164,7 +164,7 @@ sealed class MainForm : Form
         // badge, theme button and Pause/Resume share ONE row container, so they are all vertically centered on the same line
         // (the badge is shorter than the buttons, so it gets a little extra top margin to sit in the middle)
         _dryBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _lockBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _vpnBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0);
-        Ui.Tip.SetToolTip(_vpnBadge, "A VPN (such as Cloudflare WARP) refuses the internet check on a single connection. The app checks the connection in use through the VPN and the other one by its gateway, so it cannot confirm the other connection has internet before switching to it.");
+        Ui.Tip.SetToolTip(_vpnBadge, "A VPN (such as Cloudflare WARP) refuses the internet check on a single connection. The app checks the connection in use through the VPN and the other one by its gateway, so it cannot confirm the other connection has internet before switching to it. For exact checks, exclude 8.8.8.8 and 9.9.9.9 from the VPN (in WARP: Preferences, Advanced, Split Tunnels, Exclude IPs).");
         _pauseBtn.Margin = _resumeBtn.Margin = new Padding(0);
         var cluster = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, (68 - Ui.BtnH) / 2 - Ui.Gap / 2, 0, 0) };
         cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_vpnBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);

@@ -43,7 +43,7 @@ The tray icon shows the state: **green** = on the main connection, **amber** = o
 | **Policy** | The rules for the backup connection. *Add Rule* opens a program picker (programs that used backup data first, then running ones); you can also drag an `.exe` onto the page. *Edit As JSON* edits the same rules as text. |
 | **Settings** | Theme, how long the main connection must be good before switching back, mute notifications, **start when I sign in**, the **daily data limit** and check interval for the backup, the Global Trigger (how much a watched program may download before it is blocked), and **Check For Updates**. |
 
-**Exit** (tray menu) restores everything first. A VPN such as Cloudflare WARP is supported; the dashboard then shows a *VPN: Limited Checks* badge (see [How it works](docs/ARCHITECTURE.md#vpns)).
+**Exit** (tray menu) restores everything first. A VPN such as Cloudflare WARP is supported; the dashboard then shows a *VPN* badge (see [How it works](docs/ARCHITECTURE.md#vpns)).
 
 ## How it works, in short
 
@@ -86,7 +86,7 @@ Running the tests and building the installer: [docs/DEVELOPMENT.md](docs/DEVELOP
 - Connections that are not heavy and not on the watch list (for example a game session) stay on the backup until they reconnect on their own.
 - IPv4 only.
 - It manages **two** connections at a time. With three or more real adapters you choose which two in *Choose Connections*.
-- Behind a **full-tunnel VPN** the app cannot confirm that the idle connection has internet before switching to it, only that its link and gateway are up.
+- Behind a **full-tunnel VPN** the app cannot confirm that the idle connection has internet before switching to it, only that its link and gateway are up. Excluding `8.8.8.8` and `9.9.9.9` from the VPN gives exact checks again ([how](docs/CONFIGURATION.md#if-something-goes-wrong)).
 
 ## Forking and contributing
 

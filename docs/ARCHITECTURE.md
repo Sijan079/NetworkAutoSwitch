@@ -58,7 +58,10 @@ Treating that as an outage would switch to the backup for no reason, so `VpnFall
 - the **idle** connection is judged by its link and a ping to its gateway (the app cannot confirm it has internet);
 - because moving back is then a guess, a failed attempt soon after moving back doubles the wait before the next one (up to 5 minutes), so a Wi-Fi that is up but has no internet cannot make the app bounce.
 
-The dashboard shows a *VPN: Limited Checks* badge while this is active. A VPN tunnel that sits on top of the two adapters is not reported as a routing problem.
+The dashboard shows a *VPN* badge while this is active. A VPN tunnel that sits on top of the two adapters is not reported as a routing problem.
+
+I tested the other ways to measure one adapter (pings and DNS requests sent from the adapter's address, and connections to the VPN's own servers): a full-tunnel VPN blocks all of them, so nothing on our side can get around it.
+What does work is **excluding the two check addresses from the VPN** (`8.8.8.8` and `9.9.9.9`, see [CONFIGURATION.md](CONFIGURATION.md#if-something-goes-wrong)): they then bypass the tunnel, and the exact check works again. The app notices by itself and drops the badge.
 
 ## Source layout
 
