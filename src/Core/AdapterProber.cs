@@ -59,6 +59,27 @@ public static class AdapterProber
         return new(nic.Name, idx, false, 0, last);
     }
 
+    /// <summary>An ordinary internet check, NOT forced onto an adapter: it answers "does the connection Windows is using now have internet?".
+    /// Only used when a VPN refuses the per-adapter check (see <see cref="VpnFallback"/>).</summary>
+    public static ProbeResult ProbeAny(int timeoutMs = 1200)
+    {
+        using var cts = new CancellationTokenSource(timeoutMs);
+        var pending = Targets.Select(t => ConnectAsync(0, t, cts.Token)).ToList();
+        string last = "timeout";
+        try
+        {
+            while (pending.Count > 0)
+            {
+                var done = Task.WhenAny(pending).GetAwaiter().GetResult(); pending.Remove(done);
+                var (ok, ms, detail, ip) = done.GetAwaiter().GetResult();
+                if (ok) { cts.Cancel(); return new("(active)", 0, true, ms, $"connected to {ip}"); }
+                last = detail;
+            }
+        }
+        catch (Exception e) { last = e.GetBaseException().GetType().Name.Replace("Exception", ""); }
+        return new("(active)", 0, false, 0, last);
+    }
+
     static async Task<(bool ok, long ms, string detail, string ip)> ConnectAsync(int ifIndex, string ip, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -66,7 +87,7 @@ public static class AdapterProber
         {
             using var s = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             // IPv4 expects the interface index in network byte order
-            s.SetRawSocketOption(0, IP_UNICAST_IF, BitConverter.GetBytes(IPAddress.HostToNetworkOrder(ifIndex)));
+            if (ifIndex > 0) s.SetRawSocketOption(0, IP_UNICAST_IF, BitConverter.GetBytes(IPAddress.HostToNetworkOrder(ifIndex)));
             await s.ConnectAsync(new IPEndPoint(IPAddress.Parse(ip), 443), ct).ConfigureAwait(false);
             return (true, sw.ElapsedMilliseconds, "", ip);
         }

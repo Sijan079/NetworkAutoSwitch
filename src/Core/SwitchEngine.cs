@@ -2,7 +2,7 @@ using System.Net.Sockets;
 
 namespace NetworkAutoSwitch.Core;
 
-public record EngineStatus(int Tick, Active Active, ProbeResult Primary, ProbeResult Backup, bool Changed, string Reason, bool Paused, string EtwInfo, ConnectionMode Mode = ConnectionMode.Auto);
+public record EngineStatus(int Tick, Active Active, ProbeResult Primary, ProbeResult Backup, bool Changed, string Reason, bool Paused, string EtwInfo, ConnectionMode Mode = ConnectionMode.Auto, bool Degraded = false);
 
 /// <summary>The whole app in one class: probe both adapters, decide, switch metrics, apply backup rules,
 /// run the download watchdog, and always restore on stop. Used by both the CLI and the tray app.</summary>
@@ -18,6 +18,9 @@ public sealed class SwitchEngine
     // Detection speed: 3 failed checks in a row (each gives up after ~1.2 s, re-checked at once) = about 4 s.
     // Coming back is deliberately slower and is a SETTING (default 10 s of good checks), so a flickering Wi-Fi does not bounce you between connections.
     const int FailAfter = 3;
+    VpnFallback.Backoff? _backoff; bool _degraded;
+    /// <summary>True while a VPN refuses the per-connection internet check and the app works from what it can still know.</summary>
+    public bool Degraded => _degraded;
     int _recoverSeconds = 10, _recoverAfter = 10;      // seconds the main connection must stay good / the same expressed as a number of checks
     FailoverMonitor _mon = new(FailAfter, 10);
     readonly SemaphoreSlim _nudge = new(0, int.MaxValue);   // "check now": released by network-change events and by mode changes
@@ -238,12 +241,24 @@ public sealed class SwitchEngine
                 var p = Task.Run(() => AdapterProber.Probe(pn), CancellationToken.None);
                 var b = Task.Run(() => AdapterProber.Probe(bn), CancellationToken.None);
                 var (pr, br) = (await p, await b);
+                bool degraded = false;
+                if (VpnFallback.IsBlocked(pr) || VpnFallback.IsBlocked(br))
+                {
+                    bool activeIsPrimary = (_mode == ConnectionMode.Auto ? _mon.Active : _locked) == Active.Primary;
+                    var (pr0, br0) = (pr, br);
+                    (pr, br, degraded) = await Task.Run(() => VpnFallback.Apply(pr0, br0, activeIsPrimary, () => AdapterProber.ProbeAny(), n => VpnFallback.PingGateway(n)));
+                }
+                SetDegraded(degraded);
                 Decision d;
                 lock (_gate)
                 {
                     if (_mode == ConnectionMode.Auto)
                     {
                         d = _mon.Observe(pr.Healthy, br.Healthy, primaryLinkDown: AdapterProber.IsLinkDown(pr.Detail));
+                        _backoff ??= new VpnFallback.Backoff(() => _recoverSeconds);
+                        if (d.Changed) _backoff.OnSwitch(d.Active, DateTime.UtcNow, degraded);
+                        _backoff.Settle(DateTime.UtcNow, d.Active);
+                        _mon.SetRecoverAfter(Math.Max(1, (int)Math.Round(_backoff.Seconds / (double)Math.Max(1, _interval))));
                         if (_enforce && !_paused)
                         {
                             if (d.Changed) Enforce(d.Active, moveRunning: d.Active == Active.Primary);          // a real switch (back to main: also move running downloads)
@@ -258,7 +273,7 @@ public sealed class SwitchEngine
                     }
                 }
                 var status = new EngineStatus(t, d.Active, pr, br, d.Changed, d.Reason, _paused,
-                    _etw is null ? "" : $"etw={_etw.EventsMatched}/{_etw.EventsSeen}", _mode);
+                    _etw is null ? "" : $"etw={_etw.EventsMatched}/{_etw.EventsSeen}", _mode, degraded);
                 Stats.Record(status, DateTime.Now);
                 Status?.Invoke(status);
                 if (ticks == 0 || t < ticks)
@@ -275,6 +290,14 @@ public sealed class SwitchEngine
             System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
             Cleanup();
         }
+    }
+
+    void SetDegraded(bool on)
+    {
+        if (on == _degraded) return;
+        _degraded = on;
+        Log(on ? "VPN: it refuses the check on a single connection (AccessDenied). Using the VPN's own path for the connection in use, and the gateway for the other one. Switching back is a guess until the main connection proves itself, so it waits longer after a failed attempt."
+               : "VPN: per-connection checks work again.");
     }
 
     /// <summary>Pause: put Windows back to normal and stop switching until Resume.</summary>
@@ -314,6 +337,11 @@ public sealed class SwitchEngine
         var chosen = MetricSwitcher.RouteChoice();
         if (chosen is null) return;
         if (chosen.Equals(expected, StringComparison.OrdinalIgnoreCase)) { Log($"  [route] new connections now use {chosen}"); return; }
+        if (!chosen.Equals(other, StringComparison.OrdinalIgnoreCase))
+        {   // neither of our two: a VPN tunnel (or another virtual adapter) sits on top. It sends its traffic over whichever of our adapters Windows prefers, so there is nothing to fix.
+            Log($"  [route] new connections go through {chosen} (a tunnel), which follows {expected}");
+            return;
+        }
         Log($"  [route] WARNING: new connections still use {chosen}, not {expected}. Pushing {other} further back.");
         BackupPolicy.Run(MetricSwitcher.StrongDemote(other), false, Log);
         chosen = MetricSwitcher.RouteChoice();

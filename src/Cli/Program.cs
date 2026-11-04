@@ -192,6 +192,38 @@ static class SelfTest
         for (int i = 0; i < 3; i++) q.Observe(false, true);
         q.Observe(true, false);
         Check("backup dies while primary is back: return immediately", q.Active == Active.Primary);
+        // ---- VPN fallback: a VPN that refuses the per-adapter check must not look like an outage ----
+        {
+            ProbeResult Den(string n) => new(n, 1, false, 0, "AccessDenied");
+            ProbeResult Ok(string n) => new(n, 1, true, 40, "connected");
+            int calls = 0; ProbeResult Net(bool ok) { calls++; return ok ? new("(active)", 0, true, 70, "x") : new("(active)", 0, false, 0, "timeout"); }
+            var r0 = VpnFallback.Apply(Ok("W"), Ok("P"), true, () => Net(true), _ => (true, 1));
+            Check("VPN fallback: nothing blocked -> results untouched, not degraded", !r0.Degraded && r0.Primary.Ms == 40 && calls == 0);
+            var r1 = VpnFallback.Apply(Den("W"), Den("P"), true, () => Net(true), _ => (true, 5));
+            Check("VPN fallback: both denied, internet works -> both healthy, degraded", r1.Degraded && r1.Primary.Healthy && r1.Backup.Healthy && r1.Primary.Ms == 70 && r1.Backup.Ms == 5 && calls == 1);
+            Check("VPN fallback: the active connection says 'through the VPN', the idle one 'gateway'", r1.Primary.Detail == VpnFallback.ViaVpn && r1.Backup.Detail == VpnFallback.GatewayOnly);
+            var r2 = VpnFallback.Apply(Den("W"), Den("P"), true, () => Net(false), _ => (true, 5));
+            Check("VPN fallback: active has no internet -> main counts as down, backup (gateway ok) as up", !r2.Primary.Healthy && r2.Backup.Healthy);
+            var mm = new FailoverMonitor(3, 3); for (int i = 0; i < 3; i++) mm.Observe(r2.Primary.Healthy, r2.Backup.Healthy);
+            Check("VPN fallback: a real outage behind a VPN still fails over", mm.Active == Active.Backup);
+            var r3 = VpnFallback.Apply(Den("W"), Den("P"), false, () => Net(true), _ => (false, 0));
+            Check("VPN fallback: on backup, main's gateway unreachable -> main stays down", r3.Primary.Healthy == false && r3.Backup.Healthy);
+            calls = 0; var r4 = VpnFallback.Apply(Ok("W"), Den("P"), true, () => Net(true), _ => (true, 3));
+            Check("VPN fallback: only the idle connection denied -> no internet check needed", calls == 0 && r4.Degraded && r4.Backup.Healthy && r4.Primary.Ms == 40);
+            int baseSec = 10; var bo = new VpnFallback.Backoff(() => baseSec); var tv0 = new DateTime(2026, 1, 1, 12, 0, 0);
+            bo.OnSwitch(Active.Primary, tv0, true); bo.OnSwitch(Active.Backup, tv0.AddSeconds(20), true);
+            Check("backoff: failing 20 s after moving back doubles the wait", bo.Seconds == 20);
+            bo.OnSwitch(Active.Primary, tv0.AddSeconds(60), true); bo.OnSwitch(Active.Backup, tv0.AddSeconds(80), true);
+            Check("backoff: doubles again, then is capped at 5 minutes", bo.Seconds == 40);
+            for (int i = 0; i < 6; i++) { bo.OnSwitch(Active.Primary, tv0.AddMinutes(10 + i), true); bo.OnSwitch(Active.Backup, tv0.AddMinutes(10 + i).AddSeconds(5), true); }
+            Check("backoff: never above 300 s", bo.Seconds == 300);
+            bo.OnSwitch(Active.Primary, tv0.AddMinutes(30), true); bo.Settle(tv0.AddMinutes(36), Active.Primary);
+            Check("backoff: 5 quiet minutes on the main connection -> back to the normal wait", bo.Seconds == 10);
+            var bo2 = new VpnFallback.Backoff(() => 600); bo2.OnSwitch(Active.Primary, tv0, true); bo2.OnSwitch(Active.Backup, tv0.AddSeconds(5), true);
+            Check("backoff: never goes below what you set (600 s stays 600 s)", bo2.Seconds == 600);
+            var bo3 = new VpnFallback.Backoff(() => 10); bo3.OnSwitch(Active.Primary, tv0, false); bo3.OnSwitch(Active.Backup, tv0.AddSeconds(5), false);
+            Check("backoff: a real internet check failing is not punished (not degraded)", bo3.Seconds == 10);
+        }
         var pol = new PolicyFile(new() { new("A'b", @"C:\x\a.exe", "block"), new("T", @"C:\x\t.exe", "throttle", 500) });
         var cmds = BackupPolicy.ApplyCommands(pol, "Ethernet 2");
         Check("block rule is scoped to backup adapter and quotes are escaped", cmds[0].Contains("-InterfaceAlias 'Ethernet 2'") && cmds[0].Contains("'NetAutoSwitch-A''b'"));

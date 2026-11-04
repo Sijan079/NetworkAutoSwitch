@@ -14,6 +14,11 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 - **Loading placeholders**: while the app changes the network (for example after you swap main and backup) the cards show grey bars until the first new measurement arrives.
 - *Edit As JSON* on the Policy page (checked before it is accepted).
 
+### Fixed
+- **VPNs such as Cloudflare WARP no longer look like an outage.** They refuse the internet check on a single connection (`AccessDenied`), which made both connections show Down and could cause a false switch to the backup. The app now checks the connection in use through the VPN and the other one by its gateway, shows a *VPN: Limited Checks* badge, and waits longer before each new try of moving back if the main connection fails again soon after.
+- A VPN tunnel on top of the two connections is no longer reported as a routing failure.
+- A crash when the tray quit while a status update was still queued.
+
 ### Changed
 - The JSON tab is gone from the navigation; the theme button left the Dashboard banner (it is in Settings now).
 - *Choose Connections* closes at once and applies the change in the background.
