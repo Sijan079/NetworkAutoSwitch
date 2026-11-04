@@ -9,3 +9,6 @@ dist/
 # local, personal files
 *.bak
 *.log
+
+# local helper scripts (not part of the repository: releases ship as an installer bundle)
+scripts/

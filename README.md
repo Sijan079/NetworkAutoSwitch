@@ -39,17 +39,20 @@ The tray icon shows the state (green = main, amber = backup, red = nothing works
 
 ## Install
 
-Requires the **.NET 9 Desktop Runtime** (or the SDK, to build).
+> **An installer bundle is planned** and will be published under this repository's Releases. Until then, build it from source.
+
+Requires **Windows 10/11** and the **.NET 9 SDK** (to build) or the **.NET 9 Desktop Runtime** (to run a published copy).
 
 ```powershell
-.\scripts\deploy.ps1                 # build, test, publish to dist\Tray, start
-# in an ADMINISTRATOR terminal, once:
-.\scripts\install-autostart.ps1      # start at every login (30 s delay), elevated, no UAC prompt
-.\scripts\uninstall-autostart.ps1    # remove it
+dotnet publish src\Tray -c Release -o dist\Tray
+dist\Tray\NetworkAutoSwitchTray.exe       # Windows asks for administrator rights once, then it sits in the tray
 ```
 
-`deploy.ps1` is safe to run while the app is running: it asks the running copy to exit the normal way (restoring your network settings) before replacing it.
-Stop the running tray from a script with `dist\Tray\NetworkAutoSwitchTray.exe --quit` (no admin needed).
+To start it at every login, create a scheduled task that runs `NetworkAutoSwitchTray.exe` at logon **with highest privileges**
+(that way it starts already elevated, with no prompt). Wait about 30 seconds after login before it starts, so a slow Wi-Fi connect is not mistaken for an outage.
+
+Before replacing a running copy, ask it to exit the normal way, which puts your network settings back:
+`dist\Tray\NetworkAutoSwitchTray.exe --quit` (no administrator rights needed).
 
 ## Files and locations
 
@@ -93,7 +96,6 @@ Stop the running tray from a script with `dist\Tray\NetworkAutoSwitchTray.exe --
 ```
 NetworkAutoSwitch.sln
 config/        policy.json (the default policy), policy-test.json (a tiny test policy for curl)
-scripts/       deploy.ps1, install-autostart.ps1, uninstall-autostart.ps1, test-watchdog.ps1
 docs/legacy/   probe-adapters.ps1: the original route-based prototype (kept for reference; replaced by the socket probe)
 src/
   Core/        NetworkAutoSwitch.Core: everything that is not UI
