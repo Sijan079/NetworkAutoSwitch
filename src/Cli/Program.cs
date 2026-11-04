@@ -228,6 +228,16 @@ static class SelfTest
             Check("schedule: a different adapter was chosen -> check now", Due(1, must: true));
             Check("schedule: 1 s setting behaves like before", ProbeSchedule.ProbeBackupNow(t, t.AddSeconds(-1), 1, false, true, true, false));
         }
+        // ---- start when I sign in ----
+        {
+            string enable = StartupTask.EnableCommand(@"C:\Program Files\Network Auto Switch\NetworkAutoSwitchTray.exe");
+            Check("startup: the task runs the program from its own folder, 30 s after sign-in, with the highest rights", enable.Contains(@"-Execute 'C:\Program Files\Network Auto Switch\NetworkAutoSwitchTray.exe'")
+                && enable.Contains(@"-WorkingDirectory 'C:\Program Files\Network Auto Switch'") && enable.Contains("PT30S") && enable.Contains("-RunLevel Highest") && enable.Contains("-TaskName NetworkAutoSwitchTray"));
+            Check("startup: a quote in the path cannot break out of the command", StartupTask.EnableCommand(@"C:\Users\O'Brien\app.exe").Contains(@"-Execute 'C:\Users\O''Brien\app.exe'"));
+            Check("startup: turning it off removes the task and ignores 'not found'", StartupTask.DisableCommand.Contains("Unregister-ScheduledTask -TaskName NetworkAutoSwitchTray") && StartupTask.DisableCommand.Contains("SilentlyContinue"));
+            Check("startup: the program is read from the task's XML", StartupTask.ParseTarget("<Task><Actions><Exec><Command>\"C:\\a &amp; b\\x.exe\"</Command></Exec></Actions></Task>") == @"C:\a & b\x.exe");
+            Check("startup: no command in the XML -> off", StartupTask.ParseTarget("<Task/>") is null);
+        }
         // ---- VPN fallback: a VPN that refuses the per-adapter check must not look like an outage ----
         {
             ProbeResult Den(string n) => new(n, 1, false, 0, "AccessDenied");

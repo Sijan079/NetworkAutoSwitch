@@ -52,6 +52,8 @@ sealed class MainForm : Form
     readonly PolicyEditor _editor;
     readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
     readonly NoWheelNumeric _cap = new() { Minimum = 0, Maximum = 1_000_000, Increment = 100, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };
+    readonly CheckBox _startup = new() { Text = "Start When I Sign In", AutoSize = true, BackColor = Ui.CardBg };
+    bool _startupBusy;
     readonly CheckBox _mute = new() { Text = "Mute Notifications", AutoSize = true, BackColor = Ui.CardBg };
     readonly Func<bool> _getMute; readonly Action<bool> _setMute;
     // loading placeholders (shown while the engine changes the network, so old values never show under new names)
@@ -594,8 +596,8 @@ sealed class MainForm : Form
     Control SettingsPage()
     {
         var page = Page();
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = Ui.Bg };
-        foreach (int h in new[] { 124, 124, 100, 164, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7, BackColor = Ui.Bg };
+        foreach (int h in new[] { 124, 124, 100, 110, 164, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // appearance: applies at once (the window is rebuilt in the new colors)
@@ -625,6 +627,15 @@ sealed class MainForm : Form
         nflow.Controls.Add(_mute);
         notes.Body.Controls.Add(nflow);
 
+        // start when I sign in: the same scheduled task the installer creates; applies at once
+        var startup = new Card(Ui.Play, "Startup");
+        startup.SetHint("Starts the app by itself 30 seconds after you sign in, already running as administrator (no prompt). The delay gives Wi-Fi time to connect, so a slow sign-in is not mistaken for an outage.\nIt is the same setting as the installer's Start when I sign in option.");
+        _startup.Checked = StartupTask.IsEnabled();
+        _startup.CheckedChanged += (_, _) => SetStartup(_startup.Checked);
+        var sflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 0, 0) };
+        sflow.Controls.Add(_startup);
+        startup.Body.Controls.Add(sflow);
+
         // data on the backup (a phone tether is usually on a mobile plan)
         var data = new Card(Ui.Download, "Backup Data");
         data.SetHint("Daily limit: you are told when the backup has carried 80 % of it today, and when it is reached. The count is everything that goes through the backup adapter and starts again at midnight. 0 = no limit.\nIdle backup check: while the main connection is fine, the backup is checked this often. Every check uses a little mobile data; going to the backup stays just as fast.");
@@ -636,11 +647,25 @@ sealed class MainForm : Form
         dflow.Controls.AddRange(new Control[] { L("Check The Idle Backup Every"), _backupCheck, L("s") });
         data.Body.Controls.Add(dflow);
 
-        foreach (var c in new Control[] { appearance, switching, notes, data }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
-        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(data, 0, 3); grid.Controls.Add(_global, 0, 4);
+        foreach (var c in new Control[] { appearance, switching, notes, startup, data }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
+        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(_global, 0, 5);
         page.Controls.Add(grid);
         page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); }));
         return page;
+    }
+
+    /// <summary>Turns "start when I sign in" on or off. Talks to Windows, so it runs off the UI thread; the box shows what really happened afterwards.</summary>
+    void SetStartup(bool on)
+    {
+        if (_startupBusy) return;
+        _startupBusy = true;
+        string exe = Environment.ProcessPath ?? "";
+        Task.Run(() =>
+        {
+            bool ok = StartupTask.Set(on, exe, _engine.Log);
+            bool now = StartupTask.IsEnabled();
+            OnUi(() => { _startup.Checked = now; _startupBusy = false; if (!ok) Say(on ? "Could not turn on start at sign-in." : "Could not turn off start at sign-in.", true); });
+        });
     }
 
     void Say(string text, bool error, bool ok = false)

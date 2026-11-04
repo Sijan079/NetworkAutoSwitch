@@ -12,6 +12,11 @@ Everything the app stores lives in **`C:\ProgramData\NetworkAutoSwitch\`**. All 
 
 Old files keep loading in newer versions: unknown fields are ignored and missing fields get defaults (see [RELEASING.md](RELEASING.md#what-users-can-rely-on-in-every-version)).
 
+## Start when I sign in
+
+Settings → Startup (or the installer's option) creates a scheduled task called `NetworkAutoSwitchTray`: it runs the app with the highest rights 30 seconds after you sign in, so it starts already elevated with no prompt.
+The task starts the copy you turned it on from; turning it on again from another copy (for example a build in `dist\Tray`) points it there.
+
 ## Your connections
 
 The app **finds your connections by itself**: the main one (Wi-Fi or a wired adapter) and a backup (a phone tethered over USB, Bluetooth or mobile broadband).
