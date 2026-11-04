@@ -8,31 +8,9 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
-## [0.1.0-rc.1] - 2026-11-04
-
-Release candidate for 0.1.0: please try the installer. If nothing is wrong, 0.1.0 is the same program.
-
-### Added
-- Keeps a main connection (Wi-Fi) and a backup (for example a phone tether) and switches between them. An outage is noticed within seconds: at once if Windows reports the link down, in about 4 seconds if packets simply stop.
-- Switching back to the main connection after 10 good checks in a row, so a flickering connection does not bounce you around.
-- **Adapters are detected automatically** (Wi-Fi, Ethernet, phone tethers over USB, Bluetooth or mobile broadband; VPNs, virtual machines and driver layers are ignored) and re-detected when something is plugged in or changes. You can choose them yourself in *Choose Connections*.
-- **Mode**: automatic, or locked to one connection with no automatic switching.
-- Policy for the backup connection: watch rules block a program only while it downloads fast, block rules, and upload caps. Blocks last until you lift them. Add rules from a program picker, from the backup data table, or by dragging an `.exe`.
-- When the main connection returns, downloads still running on the backup are moved over to it.
-- Tray app with a dashboard (live status, latency chart, data used per program), a live colored log, and a policy editor. Light, dark, or follow-Windows theme.
-- Installer for Windows 10 and 11 (no .NET installation needed): optional start at sign-in, upgrades in place, never downgrades, restores your network settings on uninstall.
-- **Settings page**: Appearance (theme), how many seconds the main connection must work before switching back, mute notifications, and the Global Trigger (moved from the Policy page).
-- **Network names** (for example `SNcial_5G`) on the connection cards, the Dashboard banner and the tray status.
-- **Loading placeholders**: while the app changes the network (for example after you swap main and backup) the cards show grey bars until the first new measurement arrives.
-- *Edit As JSON* on the Policy page (checked before it is accepted).
-
-- **VPNs such as Cloudflare WARP no longer look like an outage.** They refuse the internet check on a single connection (`AccessDenied`), which made both connections show Down and could cause a false switch to the backup. The app now checks the connection in use through the VPN and the other one by its gateway, shows a *VPN: Limited Checks* badge, and waits longer before each new try of moving back if the main connection fails again soon after.
-- A VPN tunnel on top of the two connections is no longer reported as a routing failure.
-- A crash when the tray quit while a status update was still queued.
-
 ## [0.1.0] - 2026-11-04
 
-First release.
+First release. Everything below is new.
 
 ### Added
 - Keeps a main connection (Wi-Fi) and a backup (for example a phone tether) and switches between them. An outage is noticed within seconds: at once if Windows reports the link down, in about 4 seconds if packets simply stop.
