@@ -4,7 +4,7 @@ using NetworkAutoSwitch.Core;
 
 namespace NetworkAutoSwitch.Tray;
 
-/// <summary>Form-based editor for the backup rules, as three sibling cards on the page: global trigger on top, rule list on the left,
+/// <summary>Form-based editor for the backup rules, as two sibling cards on the page: the rule list on the left,
 /// the selected rule on the right. Explanations live in tooltips. Load() fills it, Build() validates and returns the policy.</summary>
 sealed class PolicyEditor : UserControl
 {
@@ -31,10 +31,7 @@ sealed class PolicyEditor : UserControl
                             _win = new() { Minimum = 1, Maximum = 600, Width = 68 },
                             _kbps = new() { Minimum = 1, Maximum = 1_000_000, Increment = 100, Width = 96 };
     readonly Label _rate = new() { AutoSize = true, ForeColor = Ui.Muted, Padding = new Padding(4, 6, 0, 0), BackColor = Ui.CardBg };
-    // global trigger (shared by every watch rule that doesn't have its own)
-    readonly NoWheelNumeric _gMb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 0.5m, Value = 2, Width = 84 },
-                            _gWin = new() { Minimum = 1, Maximum = 600, Value = 10, Width = 68 };
-    readonly Label _gRate = new() { AutoSize = true, ForeColor = Ui.Muted, Padding = new Padding(4, 6, 0, 0), BackColor = Ui.CardBg };
+    readonly GlobalTriggerCard _global;      // the global trigger (shared by every watch rule that has no trigger of its own); shown on the Settings page
     readonly CheckBox _useGlobal = new() { Text = "Use Global Trigger", AutoSize = true, Checked = true, BackColor = Ui.CardBg };
     readonly TableLayoutPanel _form = new() { Dock = DockStyle.Top, ColumnCount = 2, AutoSize = true, Padding = new Padding(0, 4, 0, 0), BackColor = Ui.CardBg };
     readonly List<Row> _rows = new();
@@ -65,9 +62,9 @@ sealed class PolicyEditor : UserControl
         if (dlg.ShowDialog(FindForm()) == DialogResult.OK && dlg.Selected.Count > 0) AddPrograms(dlg.Selected);
     }
 
-    public PolicyEditor()
+    public PolicyEditor(GlobalTriggerCard global)
     {
-        BackColor = Ui.Bg;
+        _global = global; BackColor = Ui.Bg;
         AllowDrop = true; DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
         DragDrop += (_, e) =>
         {
@@ -75,17 +72,10 @@ sealed class PolicyEditor : UserControl
                 AddPrograms(files.Where(f => f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)));
         };
 
-        // ---- the three cards sit side by side on a grid: nothing is nested inside another card ----
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ui.Bg };
+        // ---- the rule list and the rule sit side by side: nothing is nested inside another card ----
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Ui.Bg };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 112)); grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        // global trigger
-        var global = new Card(Ui.Download, "Global Trigger");
-        global.SetHint("Every watch rule uses this unless you give it its own.\nA watched program that receives more than this is blocked until you unblock it on the Dashboard.");
-        var gFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg };
-        gFlow.Controls.AddRange(new Control[] { L("Block Above"), _gMb, L("MB Per"), _gWin, L("s"), _gRate });
-        global.Body.Controls.Add(gFlow);
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // rule list
         var left = new Card(Ui.List, "Rules");
@@ -128,15 +118,15 @@ sealed class PolicyEditor : UserControl
         AddField("Upload Cap", kb, "throttle");
         right.Body.AutoScroll = true; right.Body.Controls.Add(_form);
 
-        grid.Controls.Add(global, 0, 0); grid.SetColumnSpan(global, 2);
-        grid.Controls.Add(left, 0, 1); grid.Controls.Add(right, 1, 1);
+
+        grid.Controls.Add(left, 0, 0); grid.Controls.Add(right, 1, 0);
         Controls.Add(grid);
 
         foreach (var c in new Control[] { _name, _exes, _folder, _path }) c.TextChanged += (_, _) => Commit();
         _action.SelectedIndexChanged += (_, _) => { Commit(); ApplyVisibility(); };
         foreach (var n in new[] { _mb, _win, _kbps }) n.ValueChanged += (_, _) => Commit();
         _useGlobal.CheckedChanged += (_, _) => { Commit(); ApplyVisibility(); };
-        foreach (var n in new[] { _gMb, _gWin }) n.ValueChanged += (_, _) => { if (!_loading) ShowGlobalChange(); };
+        _global.Changed += () => { if (!_loading) ShowGlobalChange(); };
     }
 
     static Label L(string t) => new() { Text = t, AutoSize = true, Padding = new Padding(2, 6, 8, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg };
@@ -160,7 +150,7 @@ sealed class PolicyEditor : UserControl
         var r = Cur; if (r is null) return;
         bool g = r.UseGlobal;
         _useGlobal.Checked = g;
-        _mb.Value = Clamp(_mb, g ? _gMb.Value : r.Mb); _win.Value = Clamp(_win, g ? _gWin.Value : r.WindowSec);
+        _mb.Value = Clamp(_mb, g ? (decimal)_global.MbValue() : r.Mb); _win.Value = Clamp(_win, g ? _global.WindowSeconds() : r.WindowSec);
         _kbps.Value = Clamp(_kbps, r.Kbps);
     }
 
@@ -181,14 +171,13 @@ sealed class PolicyEditor : UserControl
     void UpdateRate()
     {
         _rate.Text = $"≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
-        _gRate.Text = $"≈ {(double)_gMb.Value * 8 / (double)_gWin.Value:0.0} Mbit/s";
     }
 
     // ---- data <-> UI ----
     public void SetPolicy(PolicyFile p)
     {
         _loading = true;
-        _gMb.Value = Clamp(_gMb, (decimal)p.Global.MbPerWindow); _gWin.Value = Clamp(_gWin, p.Global.WindowSec);
+        _global.SetValues(p.Global.MbPerWindow, p.Global.WindowSec);
         _rows.Clear(); _list.Items.Clear();
         foreach (var r in p.BackupRules)
             _rows.Add(new Row
@@ -287,6 +276,6 @@ sealed class PolicyEditor : UserControl
                     break;
             }
         }
-        return new PolicyFile(rules, new WatchDefaults((double)_gMb.Value, (int)_gWin.Value));
+        return new PolicyFile(rules, new WatchDefaults(_global.MbValue(), _global.WindowSeconds()));
     }
 }

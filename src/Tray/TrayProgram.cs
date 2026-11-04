@@ -151,7 +151,10 @@ sealed class TrayContext : ApplicationContext
         var old = _icon.ContextMenuStrip; _icon.ContextMenuStrip = BuildMenu(); old?.Dispose();
     }
 
-    MainForm NewWindow() => new(_engine, TogglePause, SetThemeMode, () => _mode);
+    MainForm NewWindow() => new(_engine, TogglePause, SetThemeMode, () => _mode, () => _mute, SetMute);
+
+    bool _mute = AppSettings.Load().MuteNotifications;
+    void SetMute(bool on) { _mute = on; try { AppSettings.Update(x => x.MuteNotifications = on); } catch { } }
 
     // ---------- theme ----------
     void SetThemeMode(ThemeMode m)
@@ -192,9 +195,6 @@ sealed class TrayContext : ApplicationContext
             modeMenu.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => _engine.SetConnectionMode(m)) { Checked = _engine.ConnMode == m });
         modeMenu.DropDownItems.Add(new ToolStripSeparator());
         modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => _window?.ChooseConnections()));
-        var theme = new ToolStripMenuItem("Theme", Ui.Glyph(Ui.Brightness, 16, Ui.Text));
-        foreach (var (mode, text) in new[] { (ThemeMode.System, "Follow System"), (ThemeMode.Light, "Light"), (ThemeMode.Dark, "Dark") })
-            theme.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => SetThemeMode(mode)) { Checked = _mode == mode });
 
         var menu = new ContextMenuStrip { Renderer = new ThemedRenderer(), BackColor = Ui.CardBg, ForeColor = Ui.Text, ShowImageMargin = true, Font = new Font("Segoe UI", 9.5f) };
         menu.Items.AddRange(new ToolStripItem[]
@@ -205,13 +205,13 @@ sealed class TrayContext : ApplicationContext
             new ToolStripMenuItem("Log", Ui.Glyph(Ui.Document, 16, Ui.Text), (_, _) => _window?.ShowWindow("Log")),
             new ToolStripMenuItem("Policy", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Policy")),
             modeMenu,
-            theme,
+            new ToolStripMenuItem("Settings", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => _window?.ShowWindow("Settings")),
             new ToolStripSeparator(),
             new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },
             new ToolStripMenuItem("Exit", Ui.Glyph(Ui.Clear, 16, Ui.Text), (_, _) => Quit()),
         });
         foreach (ToolStripItem it in menu.Items) { it.BackColor = Ui.CardBg; it.ForeColor = it.Enabled ? Ui.Text : Ui.Muted; it.Padding = new Padding(4, 5, 4, 5); }
-        foreach (var sub in new[] { theme, modeMenu })
+        foreach (var sub in new[] { modeMenu })
         {
             foreach (ToolStripItem it in sub.DropDownItems) { it.BackColor = Ui.CardBg; it.ForeColor = Ui.Text; }
             sub.DropDown.BackColor = Ui.CardBg;
@@ -228,7 +228,8 @@ sealed class TrayContext : ApplicationContext
     {
         _lastStatus = s;
         _icon.Icon = IconFor(s);
-        string which = s.Paused ? "Paused" : s.Active == Active.Primary ? $"On {_primary}" : $"On Backup ({_backup})";
+        string Net(string? n) => string.IsNullOrEmpty(n) ? "" : $" – {n}";
+        string which = s.Paused ? "Paused" : s.Active == Active.Primary ? $"On {_primary}{Net(_engine.PrimaryNetwork)}" : $"On Backup ({_backup}{Net(_engine.BackupNetwork)})";
         if (s.Mode != ConnectionMode.Auto && !s.Paused) which += " [Locked]";
         string line = $"{which} | {_primary}: {(s.Primary.Healthy ? s.Primary.Ms + "ms" : "down")} | {_backup}: {(s.Backup.Healthy ? s.Backup.Ms + "ms" : "down")}";
         _status.Text = line;
@@ -274,7 +275,7 @@ sealed class TrayContext : ApplicationContext
     }
 
     readonly bool _quiet = Environment.GetCommandLineArgs().Contains("--snapshot");   // snapshot test runs show no pop-ups
-    void Notify(string text, ToolTipIcon kind) { if (!_quiet) _icon.ShowBalloonTip(4000, "Network Auto Switch", text, kind); }
+    void Notify(string text, ToolTipIcon kind) { if (!_quiet && !_mute) _icon.ShowBalloonTip(4000, "Network Auto Switch", text, kind); }
 
     /// <summary>Stops the engine and waits (max 20 s) so it can restore metrics and remove rules.</summary>
     void Stop()

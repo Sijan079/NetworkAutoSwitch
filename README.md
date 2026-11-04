@@ -29,11 +29,10 @@ The tray icon shows the state (green = main, amber = backup, red = nothing works
 
 - **Dashboard**: status, both connections (latency, uptime), latency chart, session numbers, data used on the backup per program
   (with a one-click *Add To Watch List*), and panels for **Blocked** programs (Unblock) and **Allowed For Now** (Block Now / Watch Again).
-  The banner has the **Mode** button (Automatic, or stay on one connection), a theme menu and Pause.
+  The banner has the **Mode** button (Automatic, or stay on one connection), and Pause.
 - **Log**: live, newest first, colored by type (switch, block, unblock, error, info). Select rows and press Ctrl+C to copy.
 - **Policy**: the global trigger, a list of rules, and a rule editor. *Add Rule* opens a program picker (programs that used backup data first, then running ones). You can also drag an `.exe` onto the page.
-- **JSON**: the same policy as text.
-- **Theme**: Follow System, Light or Dark (Dashboard banner or tray menu).
+- **Settings**: Theme (Follow System, Light or Dark), how long the main connection must be good before switching back, mute notifications, and the Global Trigger. The policy can also be edited as text (*Edit As JSON* on the Policy page).
 
 **Pause** puts Windows fully back to normal and stops switching. **Exit** (tray menu) restores everything first.
 

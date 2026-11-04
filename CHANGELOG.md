@@ -8,6 +8,16 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+### Added
+- **Settings page**: Appearance (theme), how many seconds the main connection must work before switching back, mute notifications, and the Global Trigger (moved from the Policy page).
+- **Network names** (for example `SNcial_5G`) on the connection cards, the Dashboard banner and the tray status.
+- **Loading placeholders**: while the app changes the network (for example after you swap main and backup) the cards show grey bars until the first new measurement arrives.
+- *Edit As JSON* on the Policy page (checked before it is accepted).
+
+### Changed
+- The JSON tab is gone from the navigation; the theme button left the Dashboard banner (it is in Settings now).
+- *Choose Connections* closes at once and applies the change in the background.
+
 ## [0.1.0] - 2026-11-04
 
 First release.

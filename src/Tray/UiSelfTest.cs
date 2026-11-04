@@ -73,7 +73,7 @@ static class UiSelfTest
 
             // 2) the rules editor: load the real policy, add the picked programs as a rule, build it back
             using var host = new Form { StartPosition = FormStartPosition.Manual, Location = new System.Drawing.Point(-32000, -32000), Opacity = 0, Width = 1000, Height = 700 };
-            var ed = new PolicyEditor { Dock = DockStyle.Fill };
+            var ed = new PolicyEditor(new GlobalTriggerCard()) { Dock = DockStyle.Fill };
             string said = "";
             ed.Connect(() => seen, (t, err) => said = t);
             host.Controls.Add(ed); host.Show(); Application.DoEvents();

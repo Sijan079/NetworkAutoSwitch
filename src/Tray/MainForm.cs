@@ -45,18 +45,27 @@ sealed class MainForm : Form
         BackColor = Ui.CardBg, HorizontalScrollbar = true, SelectionMode = SelectionMode.MultiExtended };
     int _logWidth = 600;
     const int MaxLogRows = 2000;
-    // policy
-    readonly TextBox _policy = new();
+    // policy and settings
     readonly List<Label> _policyStatus = new();
-    readonly PolicyEditor _editor = new() { Dock = DockStyle.Fill };
+    readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Policy page reads it
+    readonly PolicyEditor _editor;
+    readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
+    readonly CheckBox _mute = new() { Text = "Mute Notifications", AutoSize = true, BackColor = Ui.CardBg };
+    readonly Func<bool> _getMute; readonly Action<bool> _setMute;
+    // loading placeholders (shown while the engine changes the network, so old values never show under new names)
+    readonly Action<bool> _busyHandler;
+    readonly System.Windows.Forms.Timer _loadingTimeout = new() { Interval = 12000 };
+    readonly Skeleton _bannerSkeleton = new(new[] { (0.5f, 22) }, 0, 8) { Dock = DockStyle.Fill, Visible = false, Surface = Ui.Bg };
+    Card _chartCard = null!;
+    bool _loading, _awaitStatus;
     TabHost _tabs = new();
-    string _prevTab = "dashboard";
     readonly Dictionary<string, Bitmap> _glyphs = new();
     bool _reallyClose;
 
-    public MainForm(SwitchEngine engine, Action togglePause, Action<ThemeMode> setTheme, Func<ThemeMode> getTheme)
+    public MainForm(SwitchEngine engine, Action togglePause, Action<ThemeMode> setTheme, Func<ThemeMode> getTheme, Func<bool> getMute, Action<bool> setMute)
     {
-        _engine = engine; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme;
+        _engine = engine; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme; _getMute = getMute; _setMute = setMute;
+        _editor = new PolicyEditor(_global) { Dock = DockStyle.Fill };
         _policyPath = Paths.DefaultPolicy;
         Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1000; Height = 900; MinimumSize = new Size(860, 640);
         StartPosition = FormStartPosition.CenterScreen; Font = Ui.UiFont(9.5f); BackColor = Ui.Bg; ForeColor = Ui.Text;
@@ -66,26 +75,50 @@ sealed class MainForm : Form
 
         _tabs.AddPage("dashboard", "Dashboard", Ui.Home, DashboardPage());
         _tabs.AddPage("log", "Log", Ui.Document, LogPage());
-        _tabs.AddPage("policy", "Policy", Ui.Settings, PolicyPage());
-        _tabs.AddPage("json", "JSON", Ui.Code, JsonPage());
-        _tabs.Changed += SyncPolicyViews;
+        _tabs.AddPage("policy", "Policy", Ui.Shield, PolicyPage());
+        _tabs.AddPage("settings", "Settings", Ui.Settings, SettingsPage());
         Controls.Add(_tabs);
 
         _statusHandler = s => OnUi(() => Apply(s));
         _engine.Status += _statusHandler;
         _adaptersHandler = () => OnUi(OnAdaptersChanged);
         _engine.AdaptersChanged += _adaptersHandler;
+        _busyHandler = busy => OnUi(() => OnBusy(busy));
+        _engine.Busy += _busyHandler;
+        _loadingTimeout.Tick += (_, _) => SetLoading(false);       // never leave placeholders up for good, whatever happens
         _refresh.Tick += (_, _) => RefreshUsage();
         _refresh.Start();
         _editor.Connect(() => _engine.Usage.Seen(), (text, error) => Say(text, error));
         LoadLogTail(); LoadPolicy();
         Ui.SkinForm(this);
+        OnAdaptersChanged();           // names, icons and network names straight away
     }
 
     void OnUi(Action a) { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
 
     /// <summary>Stops listening to the engine, so this window can be discarded (used when the theme changes).</summary>
-    public void Detach() { _engine.Status -= _statusHandler; _engine.AdaptersChanged -= _adaptersHandler; _refresh.Stop(); }
+    public void Detach() { _engine.Status -= _statusHandler; _engine.AdaptersChanged -= _adaptersHandler; _engine.Busy -= _busyHandler; _refresh.Stop(); _loadingTimeout.Stop(); }
+
+    // ---------- loading placeholders ----------
+    static readonly (float W, int H)[] ChartBars = { (1f, 14), (0.7f, 14), (0.9f, 14), (0.55f, 14) };
+
+    /// <summary>The cards that show the connections get grey placeholder bars while the engine changes things.</summary>
+    void SetLoading(bool on)
+    {
+        _loading = on; _loadingTimeout.Stop();
+        _cardP.SetLoading(on); _cardB.SetLoading(on); _chartCard.SetLoading(on, ChartBars);
+        _ = _bannerSkeleton.Handle; _banner.Visible = !on; _bannerSkeleton.Visible = on; if (on) _loadingTimeout.Start(); else _awaitStatus = false;
+    }
+
+    /// <summary>The engine started (true) or finished (false) changing the network. When it finishes, the placeholders stay until the next
+    /// measurement arrives, so the old adapter's latency is never shown under the new adapter's name.</summary>
+    void OnBusy(bool busy)
+    {
+        if (busy) SetLoading(true);
+        else if (_loading) _awaitStatus = true;
+    }
+
+    public void BeginLoading() => SetLoading(true);
 
     Bitmap G(string glyph, Color c, int px = 32)
     {
@@ -120,18 +153,16 @@ sealed class MainForm : Form
         _modeBtn.Margin = new Padding(0, 0, 8, 0);
         _modeBtn.Click += (_, _) => ModeMenu().Show(_modeBtn, new Point(0, _modeBtn.Height));
         Ui.Tip.SetToolTip(_lockBadge, "Automatic switching is off. The app stays on the connection you chose.");
-        var themeBtn = Ui.Btn(Ui.Brightness, "", "Theme", () => { });
-        themeBtn.Click += (_, _) => ThemeMenu().Show(themeBtn, new Point(0, themeBtn.Height));
         _pauseBtn = Ui.Btn(Ui.Pause, "Pause", "Stop switching and put Windows back to normal.", () => { _togglePause(); UpdatePauseButton(); });
         _resumeBtn = Ui.Btn(Ui.Play, "Resume", "Start switching again.", () => { _togglePause(); UpdatePauseButton(); }, BtnKind.Success);
         _resumeBtn.Visible = false;
         // badge, theme button and Pause/Resume share ONE row container, so they are all vertically centered on the same line
         // (the badge is shorter than the buttons, so it gets a little extra top margin to sit in the middle)
         _dryBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _lockBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0);
-        themeBtn.Margin = new Padding(0, 0, 8, 0); _pauseBtn.Margin = _resumeBtn.Margin = new Padding(0);
+        _pauseBtn.Margin = _resumeBtn.Margin = new Padding(0);
         var cluster = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, (68 - Ui.BtnH) / 2 - Ui.Gap / 2, 0, 0) };
-        cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(themeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
-        top.Controls.Add(_bannerIcon, 0, 0); top.Controls.Add(_banner, 1, 0); top.Controls.Add(cluster, 2, 0);
+        cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
+        top.Controls.Add(_bannerIcon, 0, 0); top.Controls.Add(_banner, 1, 0); top.Controls.Add(_bannerSkeleton, 1, 0); top.Controls.Add(cluster, 2, 0);
 
         // adapters
         var cards = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
@@ -165,7 +196,7 @@ sealed class MainForm : Form
         _allowedCard.SetHint("You unblocked these. The watchdog leaves them alone until the countdown ends.");
 
         // latency chart
-        var chartCard = new Card(Ui.Chart, "Latency");
+        var chartCard = _chartCard = new Card(Ui.Chart, "Latency");
         chartCard.SetHint("Last ~10 minutes. Red ticks mark failed probes.");
         _chart.BackColor = Ui.CardBg; _chart.ForeColor = Ui.Muted; _chart.Font = Ui.UiFont(8.5f);
         chartCard.Body.Padding = new Padding(Ui.Gap, 0, Ui.Pad, Ui.Gap); chartCard.Body.Controls.Add(_chart);
@@ -203,6 +234,7 @@ sealed class MainForm : Form
     {
         _cardP.SetTitle(_primary); _cardP.SetIcon(Ui.AdapterGlyph(_engine.PrimaryKind));
         _cardB.SetTitle(_backup); _cardB.SetIcon(Ui.AdapterGlyph(_engine.BackupKind));
+        _cardP.SetBadge(_engine.PrimaryNetwork ?? ""); _cardB.SetBadge(_engine.BackupNetwork ?? "");
         _modeBtn.Text = Ui.T(ModeLabel(_engine.ConnMode));
     }
 
@@ -232,19 +264,6 @@ sealed class MainForm : Form
         return m;
     }
 
-    ContextMenuStrip ThemeMenu()
-    {
-        var m = new ContextMenuStrip { Renderer = new ThemedRenderer(), BackColor = Ui.CardBg, ForeColor = Ui.Text, ShowImageMargin = true };
-        var cur = _getTheme();
-        foreach (var (mode, text) in new[] { (ThemeMode.System, "Follow System"), (ThemeMode.Light, "Light"), (ThemeMode.Dark, "Dark") })
-        {
-            var it = new ToolStripMenuItem(text) { Checked = cur == mode, BackColor = Ui.CardBg, ForeColor = Ui.Text, Padding = new Padding(4, 6, 4, 6) };
-            it.Click += (_, _) => _setTheme(mode);
-            m.Items.Add(it);
-        }
-        return m;
-    }
-
     /// <summary>Icon + big number + caption.</summary>
     static Control Tile(string glyph, Label value, string caption)
     {
@@ -259,13 +278,16 @@ sealed class MainForm : Form
     /// <summary>Shows a status right away (used after a theme change, so the new window is not blank until the next probe).</summary>
     public void ShowStatus(EngineStatus s) => Apply(s);
 
+    static string WithNet(string adapter, string? net) => string.IsNullOrEmpty(net) ? adapter : $"{adapter}  ·  {net}";
+
     void Apply(EngineStatus s)
     {
+        _cardP.SetBadge(_engine.PrimaryNetwork ?? ""); _cardB.SetBadge(_engine.BackupNetwork ?? "");   // names are refreshed by the engine in the background
         bool anyOk = s.Primary.Healthy || s.Backup.Healthy;
         if (s.Paused) { _banner.Text = "Paused"; _banner.ForeColor = Ui.Muted; _bannerIcon.Image = G(Ui.Pause, Ui.Muted); }
         else if (!anyOk) { _banner.Text = "No Connection"; _banner.ForeColor = Ui.Red; _bannerIcon.Image = G(Ui.Warning, Ui.Red); }
-        else if (s.Active == Active.Primary) { _banner.Text = _primary; _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.PrimaryKind), Ui.Green); }
-        else { _banner.Text = _backup + "  ·  Backup"; _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.BackupKind), Ui.Amber); }
+        else if (s.Active == Active.Primary) { _banner.Text = WithNet(_primary, _engine.PrimaryNetwork); _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.PrimaryKind), Ui.Green); }
+        else { _banner.Text = WithNet(_backup, _engine.BackupNetwork) + "  ·  Backup"; _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.BackupKind), Ui.Amber); }
         UpdatePauseButton();
         _lockBadge.Visible = s.Mode != ConnectionMode.Auto; _modeBtn.Text = Ui.T(ModeLabel(s.Mode));
 
@@ -275,6 +297,7 @@ sealed class MainForm : Form
         _cardB.Show(s.Backup, StatsTracker.UptimePct(st.ProbesBackup, st.FailBackup), st.AvgMs(false), s.Active == Active.Backup ? inUse : null);
         var (p, b) = st.Snapshot();
         _chart.SetData(p, b, _primary, _backup);
+        if (_awaitStatus) SetLoading(false);       // the first measurement after a change has arrived
 
         var onBackup = TimeSpan.FromSeconds(st.SecondsOnBackup);
         _stSwitches.Text = st.Switches.ToString();
@@ -494,62 +517,43 @@ sealed class MainForm : Form
         catch { }
     }
 
-    // ---------- Policy (rules editor) and JSON: two pages, each with its own Save / Revert bar ----------
+    // ---------- Policy (the rules) ----------
     Control PolicyPage()
     {
         var page = Page();
         page.Controls.Add(_editor);
-        page.Controls.Add(ActionBar());
+        page.Controls.Add(ActionBar(jsonButton: true));
         return page;
     }
 
-    Control JsonPage()
-    {
-        var page = Page();
-        _policy.Multiline = true; _policy.ScrollBars = ScrollBars.Both; _policy.Dock = DockStyle.Fill; _policy.WordWrap = false;
-        _policy.Font = new Font("Consolas", 10f); _policy.AcceptsTab = true; _policy.BorderStyle = BorderStyle.None;
-        var card = new Card(Ui.Code, "policy.json") { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
-        card.SetHint("The same rules as the Policy page, as text. Saving checks it first.");
-        card.Body.Padding = new Padding(Ui.Gap, 0, Ui.Gap, Ui.Gap - 4); card.Body.Controls.Add(_policy);
-        page.Controls.Add(card);
-        page.Controls.Add(ActionBar());
-        return page;
-    }
-
-    Control ActionBar()
+    /// <summary>Save / Revert (and, on the Policy page, "Edit As JSON"). Saving writes the whole policy: the rules AND the global trigger.</summary>
+    Control ActionBar(Action? beforeSave = null, bool jsonButton = false)
     {
         var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(0, Ui.Gap, 0, 0), BackColor = Ui.Bg };
         var status = new Label { AutoSize = true, Padding = new Padding(8, 9, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.Bg };
         _policyStatus.Add(status);
-        bar.Controls.Add(Ui.Btn(Ui.Save, "Save", "Check the rules, save them and apply them now.", SavePolicy, BtnKind.Primary));
-        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", LoadPolicy));
+        bar.Controls.Add(Ui.Btn(Ui.Save, "Save", "Check everything, save it and apply it now.", () => { beforeSave?.Invoke(); SavePolicy(); }, BtnKind.Primary));
+        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", () => { _recover.Value = _engine.RecoverSeconds; LoadPolicy(); }));
+        if (jsonButton) bar.Controls.Add(Ui.Btn(Ui.Code, "Edit As JSON", "Edit the same rules as text (for advanced use). Nothing is saved until you click Save.", EditJson));
         bar.Controls.Add(status);
         return bar;
     }
 
-    /// <summary>Keeps the Policy and JSON views in step when you switch between them (unsaved edits carry over).</summary>
-    void SyncPolicyViews()
+    /// <summary>The rules as text, in a dialog. The text is checked before it is accepted, and only changes the editor: Save still decides.</summary>
+    void EditJson()
     {
-        string now = _tabs.SelectedKey;
-        try
-        {
-            if (_prevTab == "policy" && now == "json") _policy.Text = BackupPolicy.ToJson(_editor.Build()).Replace("\r\n", "\n").Replace("\n", "\r\n");
-            else if (_prevTab == "json" && now == "policy") _editor.SetPolicy(BackupPolicy.Parse(_policy.Text));
-            _policy.SelectionStart = 0; _policy.SelectionLength = 0;
-        }
-        catch (InvalidDataException e) { Say("Couldn't carry your edits across: " + e.Message, true); }
-        _prevTab = now;
+        string json;
+        try { json = BackupPolicy.ToJson(_editor.Build()); }
+        catch (InvalidDataException e) { Say("Fix this first: " + e.Message, true); return; }
+        using var dlg = new JsonDialog(json);
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        try { _editor.SetPolicy(BackupPolicy.Parse(dlg.Json)); Say("JSON applied here. Click Save to keep it.", false); }
+        catch (InvalidDataException e) { Say(e.Message, true); }
     }
 
     void LoadPolicy()
     {
-        try
-        {
-            _policy.Text = File.ReadAllText(_policyPath).Replace("\r\n", "\n").Replace("\n", "\r\n");
-            _policy.SelectionStart = 0; _policy.SelectionLength = 0;   // never open fully selected: one keystroke would wipe it
-            _editor.SetPolicy(BackupPolicy.Parse(_policy.Text));
-            Say("", false);
-        }
+        try { _editor.SetPolicy(BackupPolicy.Parse(File.ReadAllText(_policyPath))); Say("", false); }
         catch (Exception e) { Say("Could not read policy: " + e.Message, true); }
     }
 
@@ -559,7 +563,7 @@ sealed class MainForm : Form
         try
         {
             // validate first: a typo or an incomplete rule must never reach the running engine
-            json = _tabs.SelectedKey == "json" ? _policy.Text : BackupPolicy.ToJson(_editor.Build());
+            json = BackupPolicy.ToJson(_editor.Build());
             BackupPolicy.Parse(json);
         }
         catch (InvalidDataException e) { Say("Not saved. " + e.Message, true); return; }
@@ -567,7 +571,7 @@ sealed class MainForm : Form
         {
             if (File.Exists(_policyPath)) File.Copy(_policyPath, _policyPath + ".bak", true);
             File.WriteAllText(_policyPath, json);
-            LoadPolicy();                       // refresh both views from what was really saved
+            LoadPolicy();                       // show what was really saved
             Say("Saving...", false);
             Task.Run(() =>
             {
@@ -576,6 +580,48 @@ sealed class MainForm : Form
             });
         }
         catch (Exception e) { Say("Could not save: " + e.Message, true); }
+    }
+
+    // ---------- Settings ----------
+    Control SettingsPage()
+    {
+        var page = Page();
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = Ui.Bg };
+        foreach (int h in new[] { 124, 124, 100, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        // appearance: applies at once (the window is rebuilt in the new colors)
+        var appearance = new Card(Ui.Brightness, "Appearance");
+        appearance.SetHint("Follow System switches with Windows' own light/dark setting.");
+        var cur = _getTheme();
+        var themes = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg };
+        foreach (var (mode, text, glyph) in new[] { (ThemeMode.System, "Follow System", Ui.Monitor), (ThemeMode.Light, "Light", Ui.Brightness), (ThemeMode.Dark, "Dark", Ui.Moon) })
+            themes.Controls.Add(Ui.Btn(glyph, text, $"Use the {text.ToLowerInvariant()} look.", () => { if (mode != _getTheme()) _setTheme(mode); }, mode == cur ? BtnKind.Primary : BtnKind.Secondary));
+        appearance.Body.Controls.Add(themes);
+
+        // how long the main connection must be good before moving back
+        var switching = new Card(Ui.Swap, "Switching Back");
+        switching.SetHint("How long the main connection must work, without a single failed check, before the app moves back from the backup.\nHigher = fewer back-and-forth switches if your Wi-Fi flickers.\nGoing TO the backup is not affected: that still takes only a few seconds.");
+        _recover.Value = Math.Min(_recover.Maximum, Math.Max(_recover.Minimum, _engine.RecoverSeconds));
+        Label L(string t) => new() { Text = t, AutoSize = true, Padding = new Padding(2, 6, 8, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg };
+        var sw = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg };
+        sw.Controls.AddRange(new Control[] { L("Move back to the main connection after"), _recover, L("s of good connection") });
+        switching.Body.Controls.Add(sw);
+
+        // notifications: applies at once
+        var notes = new Card(Ui.Mute, "Notifications");
+        notes.SetHint("Hides the tray pop-ups (switching, blocked programs, errors).\nEverything is still written to the Log, and the Dashboard shows the current state.");
+        _mute.Checked = _getMute();
+        _mute.CheckedChanged += (_, _) => _setMute(_mute.Checked);
+        var nflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 0, 0) };
+        nflow.Controls.Add(_mute);
+        notes.Body.Controls.Add(nflow);
+
+        foreach (var c in new Control[] { appearance, switching, notes }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
+        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(_global, 0, 3);
+        page.Controls.Add(grid);
+        page.Controls.Add(ActionBar(beforeSave: () => _engine.SetRecoverSeconds((int)_recover.Value)));
+        return page;
     }
 
     void Say(string text, bool error, bool ok = false)
@@ -608,6 +654,10 @@ sealed class MainForm : Form
             DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height));
             bmp.Save(Path.Combine(folder, key + ".png"));
         }
+        // the dashboard while the engine is changing things (grey placeholder bars)
+        _tabs.Select("dashboard"); SetLoading(true); Application.DoEvents();
+        using (var lb = new Bitmap(Width, Height)) { DrawToBitmap(lb, new Rectangle(0, 0, Width, Height)); lb.Save(Path.Combine(folder, "loading.png")); }
+        SetLoading(false);
         // the program picker, rendered off-screen (never shown) with sample "seen on the backup" data
         using var pk = new ProgramPicker(new[] { new SeenProgram("steam.exe", @"C:\Program Files (x86)\Steam\steam.exe", 52_500_000), new SeenProgram("HYPWorker.exe", @"C:\Program Files\HoYoPlay\1.19.0.382\HYPWorker.exe", 3_200_000) });
         pk.StartPosition = FormStartPosition.Manual; pk.Location = new Point(-32000, -32000); pk.Opacity = 0;   // invisible and off-screen: nothing flashes on the user's desktop

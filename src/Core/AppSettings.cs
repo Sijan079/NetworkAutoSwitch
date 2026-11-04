@@ -14,6 +14,10 @@ public sealed class AppSettings
     /// <summary>What detection chose last time (used only to keep the choice stable across restarts).</summary>
     public string LastPrimary { get; set; } = "";
     public string LastBackup { get; set; } = "";
+    /// <summary>How long the main connection must work, without a single failed check, before the app moves back from the backup.</summary>
+    public int RecoverSeconds { get; set; } = 10;
+    /// <summary>When true the tray shows no pop-up notifications (everything still goes to the log).</summary>
+    public bool MuteNotifications { get; set; } = false;
 
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 

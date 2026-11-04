@@ -38,8 +38,9 @@ string backupName = backup.Length > 0 ? backup : found.Backup ?? "";
 if (args.Contains("--list-adapters"))
 {
     var all = AdapterDiscovery.Detect();
-    Console.WriteLine($"{"Name",-34}{"Kind",-14}{"Up",-5}{"Gateway",-9}{"IPv4",-17}Description");
-    foreach (var a in all.OrderBy(a => a.Kind)) Console.WriteLine($"{a.Name,-34}{AdapterDiscovery.KindLabel(a.Kind),-14}{(a.IsUp ? "yes" : "no"),-5}{(a.HasGateway ? "yes" : "no"),-9}{a.Ipv4,-17}{a.Description}");
+    var nets = NetworkNames.Read();
+    Console.WriteLine($"{"Name",-34}{"Kind",-14}{"Up",-5}{"Gateway",-9}{"IPv4",-17}{"Network",-18}Description");
+    foreach (var a in all.OrderBy(a => a.Kind)) Console.WriteLine($"{a.Name,-34}{AdapterDiscovery.KindLabel(a.Kind),-14}{(a.IsUp ? "yes" : "no"),-5}{(a.HasGateway ? "yes" : "no"),-9}{a.Ipv4,-17}{nets.GetValueOrDefault(a.Name, ""),-18}{a.Description}");
     Console.WriteLine($"\nmain connection:   {(primary.Length > 0 ? primary + " (chosen)" : found.Primary ?? "none found")}");
     Console.WriteLine($"backup connection: {(backup.Length > 0 ? backup + " (chosen)" : found.Backup ?? "none found")}");
     return 0;
@@ -53,7 +54,8 @@ if (args.Contains("--engine-test"))
     var logLines = new List<string>(); int fails = 0;
     void Check(string name, bool ok) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}"); if (!ok) fails++; }
     // the test needs a HEALTHY adapter to fail over to: use whichever real adapter has working internet right now (whatever it is called)
-    string? testBackup = AdapterDiscovery.Candidates(AdapterDiscovery.Detect()).Select(a => a.Name).FirstOrDefault(n => AdapterProber.Probe(n).Healthy);
+    // a STABLE backup: three checks in a row must pass (one lucky check is not enough; a flaky USB dongle would make the test fail for the wrong reason)
+    string? testBackup = AdapterDiscovery.Candidates(AdapterDiscovery.Detect()).Select(a => a.Name).FirstOrDefault(n => Enumerable.Range(0, 3).All(_ => AdapterProber.Probe(n).Healthy));
     if (testBackup is null) { Console.WriteLine("SKIP  failover and lock tests: no real adapter has working internet right now"); testBackup = "Ethernet 2"; }
     else Console.WriteLine($"(using '{testBackup}' as the healthy backup for this test)");
     var eng = new SwitchEngine("ZeroTier", testBackup, Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
@@ -76,8 +78,10 @@ if (args.Contains("--engine-test"))
     Check("locked to main again: moves back immediately (no waiting for 10 good checks)", await Until(() => last is { Active: Active.Primary }, 5));
 
     eng.SetConnectionMode(ConnectionMode.Auto);
-    Check("back to automatic: it fails over by itself again (main has no internet)", await Until(() => last is { Active: Active.Backup, Mode: ConnectionMode.Auto }, 12));
-    Check("automatic: the switch is logged", logLines.Any(l => l.StartsWith("SWITCH") || l.Contains("switching to backup")) || last!.Changed || last.Active == Active.Backup);
+    bool backupStillGood = AdapterProber.Probe(testBackup).Healthy;   // the network can change while the test runs: if the backup died, say so instead of failing for the wrong reason
+    if (!backupStillGood) Console.WriteLine($"SKIP  automatic failover checks: the backup '{testBackup}' stopped working during the test");
+    else Check("back to automatic: it fails over by itself again (main has no internet)", await Until(() => last is { Active: Active.Backup, Mode: ConnectionMode.Auto }, 12));
+    if (backupStillGood) Check("automatic: the switch is logged", logLines.Any(l => l.StartsWith("SWITCH") || l.Contains("switching to backup")) || last!.Changed || last.Active == Active.Backup);
     Check("the chosen mode is remembered in the settings file", AppSettings.Load(tmp).ConnectionMode == ConnectionMode.Auto);
 
     cts0.Cancel(); try { await run; } catch { }
@@ -85,11 +89,17 @@ if (args.Contains("--engine-test"))
     // adapters are detected, not hard-coded; a choice made while running takes effect and is announced
     var eng2 = new SwitchEngine("", "", Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
     var real = AdapterDiscovery.Candidates(AdapterDiscovery.Detect());
+    int busyOn = 0, busyOff = 0;
+    eng2.SetRecoverSeconds(2);
+    Check("switch-back time: the engine keeps it between 3 and 600 s (2 becomes 3) and remembers it", eng2.RecoverSeconds == 3 && AppSettings.Load(tmp).RecoverSeconds == 3);
+    eng2.SetRecoverSeconds(45);
+    Check("switch-back time: 45 s is kept as 45", eng2.RecoverSeconds == 45 && AppSettings.Load(tmp).RecoverSeconds == 45);
     Check("auto-detect: with no names given, a main connection is found by itself (" + eng2.PrimaryName + ")", eng2.PrimaryName.Length > 0 && real.Any(a => a.Name == eng2.PrimaryName));
     Check("auto-detect: the main connection is never a virtual adapter", AdapterDiscovery.Detect().All(a => a.Name != eng2.PrimaryName || a.Kind != AdapterKind.Virtual));
     if (real.Count >= 2)
     {
         int changes = 0; eng2.AdaptersChanged += () => changes++;
+        eng2.Busy += b => { if (b) busyOn++; else busyOff++; };
         string pick1 = real[0].Name, pick2 = real[1].Name;
         eng2.SetAdapterChoice(pick2, pick1);
         Check($"choice: choosing '{pick2}' as main and '{pick1}' as backup takes effect at once", eng2.PrimaryName == pick2 && eng2.BackupName == pick1);
@@ -99,6 +109,7 @@ if (args.Contains("--engine-test"))
         Check("choice: the same adapter for both is refused (the backup is left empty)", eng2.PrimaryName == pick1 && eng2.BackupName == "");
         eng2.SetAdapterChoice(null, null);
         Check("choice: back to Automatic detects again", eng2.PrimaryName.Length > 0 && AppSettings.Load(tmp).PrimaryAdapter == "");
+        Check("busy: the window is told while the engine changes the network (so it can show placeholders), and told when done", busyOn >= 1 && busyOff == busyOn);
     }
     else Console.WriteLine("SKIP  choice tests (this PC has fewer than two real adapters)");
     File.Delete(tmp);
@@ -300,6 +311,19 @@ static class SelfTest
         Check("add: a clashing rule name gets a number (Steam 2)", clash.Rule!.Name == "Steam 2");
         Check("watched: a program listed in a rule (and in its folder) is covered", PolicyBuilder.IsCovered(@"C:\Program Files (x86)\Steam\steam.exe", existing));
         Check("watched: same name in another folder, or an unlisted program, is not covered", !PolicyBuilder.IsCovered(@"D:\other\steam.exe", existing) && !PolicyBuilder.IsCovered(@"C:\x\notepad.exe", existing));
+        // network names ("SNcial_5G"): Windows adds a number to a repeated network name; the saved Wi-Fi list tells us which name is real
+        var savedWifi = NetworkNames.ParseSavedProfiles("Profiles on interface Wi-Fi:\r\n\r\nGroup policy profiles (read only)\r\n---------------------------------\r\n    <None>\r\n\r\nUser profiles\r\n-------------\r\n    All User Profile     : SNcial\r\n    All User Profile     : SNcial_5G\r\n    All User Profile     : Starbucks Customer\r\n");
+        Check("names: the saved Wi-Fi list is read by layout, not by wording (works in any language)", savedWifi.SequenceEqual(new[] { "SNcial", "SNcial_5G", "Starbucks Customer" }));
+        Check("names: Windows' added number is removed when the shorter name is a saved network ('SNcial 1684' -> 'SNcial')", NetworkNames.Clean("SNcial 1684", savedWifi) == "SNcial");
+        Check("names: a name that is itself saved is kept as it is", NetworkNames.Clean("SNcial_5G", savedWifi) == "SNcial_5G");
+        Check("names: a name with a number is NOT shortened when the short name is unknown ('Network 30', 'Cafe 2')", NetworkNames.Clean("Network 30", savedWifi) == "Network 30" && NetworkNames.Clean("Cafe 2", savedWifi) == "Cafe 2");
+        Check("names: a number that is really part of a saved name stays ('Hotel 5' saved)", NetworkNames.Clean("Hotel 5", new[] { "Hotel 5", "Hotel" }) == "Hotel 5");
+        var rn = new FailoverMonitor(3, 10); rn.Observe(false, true, primaryLinkDown: true);
+        for (int i = 0; i < 4; i++) rn.Observe(true, true);
+        rn.SetRecoverAfter(5);
+        Check("switch-back time: lowering it applies to a count that is already running (4 good + 1 more = 5)", rn.Observe(true, true).Changed);
+        Check("switch-back time: the setting is stored and defaults to 10 s", new AppSettings().RecoverSeconds == 10);
+
         // restoring must be best-effort: an unplugged phone must never stop the firewall rules from being removed
         var gone = MetricSwitcher.RestoreCommands(new[] { new SavedMetric("No Such Adapter 9", true, 25) });
         Check("restore: an adapter that no longer exists is NOT an error (real PowerShell run)", BackupPolicy.RunParallel(gone, false, _ => { }) == 0);

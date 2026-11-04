@@ -12,11 +12,15 @@ public record Decision(Active Active, bool Changed, string Reason);
 /// fails back after M consecutive primary successes, so one flaky probe never flips anything.</summary>
 public class FailoverMonitor
 {
-    readonly int _failAfter, _recoverAfter;
+    readonly int _failAfter;
+    int _recoverAfter;
     int _bad, _good;
     public Active Active { get; private set; } = Active.Primary;
 
     public FailoverMonitor(int failAfter = 3, int recoverAfter = 3) { _failAfter = failAfter; _recoverAfter = recoverAfter; }
+
+    /// <summary>Change how many good checks in a row are needed to move back. Counters are kept, so the new value applies at once.</summary>
+    public void SetRecoverAfter(int n) => _recoverAfter = Math.Max(1, n);
 
     /// <summary>Forget the counters and start from the given state (used when leaving a locked mode).</summary>
     public void Reset(Active a) { Active = a; _bad = _good = 0; }

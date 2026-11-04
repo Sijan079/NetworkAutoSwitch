@@ -15,8 +15,11 @@ public sealed class SwitchEngine
 
     // Detection speed: 3 failed checks in a row (each gives up after ~1.2 s, re-checked at once) = about 4 s. Coming back is deliberately slower (10 good checks)
     // so a flickering Wi-Fi does not bounce you between connections.
-    const int FailAfter = 3, RecoverAfter = 10;
-    FailoverMonitor _mon = new(FailAfter, RecoverAfter);
+    // Detection speed: 3 failed checks in a row (each gives up after ~1.2 s, re-checked at once) = about 4 s.
+    // Coming back is deliberately slower and is a SETTING (default 10 s of good checks), so a flickering Wi-Fi does not bounce you between connections.
+    const int FailAfter = 3;
+    int _recoverSeconds = 10, _recoverAfter = 10;      // seconds the main connection must stay good / the same expressed as a number of checks
+    FailoverMonitor _mon = new(FailAfter, 10);
     readonly SemaphoreSlim _nudge = new(0, int.MaxValue);   // "check now": released by network-change events and by mode changes
     readonly string? _settingsFile;                       // null = the real settings file (tests pass a temporary one)
     ConnectionMode _mode;
@@ -101,11 +104,42 @@ public sealed class SwitchEngine
     public SwitchEngine(string primary, string backup, string policyFile, bool enforce, bool execute, int intervalSec, string? settingsFile = null)
     { _primaryArg = primary; _backupArg = backup; _policyFile = policyFile; _enforce = enforce; _execute = execute; _interval = intervalSec; _settingsFile = settingsFile;
       var saved = AppSettings.Load(settingsFile); _mode = saved.ConnectionMode; _userPrimary = saved.PrimaryAdapter ?? ""; _userBackup = saved.BackupAdapter ?? ""; _pName = saved.LastPrimary ?? ""; _bName = saved.LastBackup ?? "";
-      ResolveAdapters(initial: true); }
+      _recoverSeconds = Math.Clamp(saved.RecoverSeconds, 3, 600); _recoverAfter = Math.Max(1, (int)Math.Round(_recoverSeconds / (double)Math.Max(1, intervalSec))); _mon.SetRecoverAfter(_recoverAfter);
+      ResolveAdapters(initial: true); _ = Task.Run(RefreshNetworkNames); }
 
     string Mode => !_enforce ? "decide-only" : _execute ? "ENFORCE (live)" : "enforce DRY-RUN";
 
     static string? First(string? a, string? b) => !string.IsNullOrWhiteSpace(a) ? a : !string.IsNullOrWhiteSpace(b) ? b : null;
+
+    /// <summary>How many seconds the main connection must work, without a single failed check, before the app moves back from the backup.</summary>
+    public int RecoverSeconds => _recoverSeconds;
+
+    /// <summary>Change that time (3 to 600 s). Remembered across restarts and applied at once, including to a count that is already running.</summary>
+    public void SetRecoverSeconds(int seconds)
+    {
+        lock (_gate)
+        {
+            _recoverSeconds = Math.Clamp(seconds, 3, 600);
+            _recoverAfter = Math.Max(1, (int)Math.Round(_recoverSeconds / (double)Math.Max(1, _interval)));
+            _mon.SetRecoverAfter(_recoverAfter);
+            AppSettings.Update(s => s.RecoverSeconds = _recoverSeconds, _settingsFile);
+            Log($"settings: switch back to the main connection after {_recoverSeconds} s of good checks");
+        }
+    }
+
+    // ---- "busy": true while the engine is changing the network (switching, applying a choice, restoring). The window shows placeholders meanwhile. ----
+    int _busy;
+    /// <summary>Raised with true when the engine starts changing the network and with false when it is done.</summary>
+    public event Action<bool>? Busy;
+    void BeginBusy() { if (Interlocked.Increment(ref _busy) == 1) Busy?.Invoke(true); }
+    void EndBusy() { if (Interlocked.Decrement(ref _busy) == 0) Busy?.Invoke(false); }
+
+    // ---- the name of the network each adapter is connected to (for display) ----
+    Dictionary<string, string> _networks = new(StringComparer.OrdinalIgnoreCase);
+    volatile bool _namesDirty = true; DateTime _namesAt = DateTime.MinValue;
+    public string PrimaryNetwork => _networks.GetValueOrDefault(_pName, "");
+    public string BackupNetwork => _bName.Length > 0 ? _networks.GetValueOrDefault(_bName, "") : "";
+    void RefreshNetworkNames() { var n = NetworkNames.Read(); lock (_gate) _networks = n; }
 
     /// <summary>Works out which adapters are the main and the backup connection right now. Priority: a name given on the command line,
     /// then your saved choice, then detection (which keeps what is already in use while it still exists).
@@ -128,9 +162,15 @@ public sealed class SwitchEngine
             {
                 if (!initial)
                 {
-                    Log($"adapters changed: main '{_pName}' -> '{p}', backup '{_bName}' -> '{(b.Length > 0 ? b : "none")}'");
-                    Cleanup();                           // put the OLD pair back (their saved metrics) before switching to the new one
-                    _mon = FreshMonitor();
+                    BeginBusy();
+                    try
+                    {
+                        Log($"adapters changed: main '{_pName}' -> '{p}', backup '{_bName}' -> '{(b.Length > 0 ? b : "none")}'");
+                        Cleanup();                           // put the OLD pair back (their saved metrics) before switching to the new one
+                        _mon = FreshMonitor();
+                        _namesDirty = true;
+                    }
+                    finally { EndBusy(); }
                 }
                 _pName = p; _bName = b; _applied = false;
                 AppSettings.Update(s => { s.LastPrimary = p; s.LastBackup = b; }, _settingsFile);
@@ -171,9 +211,9 @@ public sealed class SwitchEngine
         _nudge.Release();     // act on it right away
     }
 
-    FailoverMonitor FreshMonitor() { var m = new FailoverMonitor(FailAfter, RecoverAfter); if (_mode != ConnectionMode.Auto) m.Reset(_locked); return m; }
+    FailoverMonitor FreshMonitor() { var m = new FailoverMonitor(FailAfter, _recoverAfter); if (_mode != ConnectionMode.Auto) m.Reset(_locked); return m; }
 
-    void OnNetworkChanged(object? s, EventArgs e) { try { _nudge.Release(); } catch (SemaphoreFullException) { } }
+    void OnNetworkChanged(object? s, EventArgs e) { _namesDirty = true; try { _nudge.Release(); } catch (SemaphoreFullException) { } }
 
     /// <summary>Runs until ticks are used up (0 = forever) or the token is cancelled. Always restores on exit.</summary>
     public async Task RunAsync(int ticks, CancellationToken ct)
@@ -193,6 +233,7 @@ public sealed class SwitchEngine
             for (int t = 1; (ticks == 0 || t <= ticks) && !ct.IsCancellationRequested; t++)
             {
                 ResolveAdapters();       // a phone plugged in, an adapter renamed or removed: noticed within a second
+                if (_namesDirty || DateTime.UtcNow - _namesAt > TimeSpan.FromSeconds(30)) { _namesDirty = false; _namesAt = DateTime.UtcNow; _ = Task.Run(RefreshNetworkNames); }   // which network each adapter is on (about 50 ms, off the loop)
                 string pn = _pName, bn = _bName;
                 var p = Task.Run(() => AdapterProber.Probe(pn), CancellationToken.None);
                 var b = Task.Run(() => AdapterProber.Probe(bn), CancellationToken.None);
@@ -237,13 +278,19 @@ public sealed class SwitchEngine
     }
 
     /// <summary>Pause: put Windows back to normal and stop switching until Resume.</summary>
-    public void Pause() { lock (_gate) { if (_paused) return; _paused = true; Cleanup(); _mon = FreshMonitor(); Log("paused: original metrics restored"); } }
+    public void Pause() { lock (_gate) { if (_paused) return; _paused = true; BeginBusy(); try { Cleanup(); } finally { EndBusy(); } _mon = FreshMonitor(); Log("paused: original metrics restored"); } }
     public void Resume() { lock (_gate) { if (!_paused) return; _paused = false; _mon = FreshMonitor(); Log("resumed"); } _nudge.Release(); }
 
     /// <summary>Makes Windows prefer <paramref name="a"/>: the preferred adapter gets the lowest metric, the other the highest.
     /// Windows' own defaults rank the tether ABOVE Wi-Fi, so the main connection must be set explicitly too, not just "restored".
     /// The original metrics are saved first and put back when the app pauses or exits.</summary>
     void Enforce(Active a, bool moveRunning)
+    {
+        BeginBusy();                          // the window shows placeholders until this is done
+        try { EnforceCore(a, moveRunning); } finally { EndBusy(); }
+    }
+
+    void EnforceCore(Active a, bool moveRunning)
     {
         if (a == Active.Primary) StopWatch();
         // With only ONE connection there is nothing to prefer over anything: the metric commands (and the backup rules) are skipped.

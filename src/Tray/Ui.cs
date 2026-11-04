@@ -73,7 +73,7 @@ static class Ui
         Refresh = "", OpenFile = "", Save = "", Undo = "", Unlock = "", Lock = "", Swap = "",
         Clock = "", Home = "", Document = "", Settings = "", Download = "", Warning = "",
         Info = "", Chart = "", Data = "", Folder = "", Code = "", Shield = "", Check = "",
-        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "", Phone = "";
+        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "", Phone = "", Moon = "", Monitor = "", Mute = "";
 
     static readonly string IconFont = PickFont();
     static string PickFont()
@@ -282,6 +282,62 @@ sealed class TabHost : Panel
     }
 }
 
+/// <summary>Grey placeholder bars with a moving shine ("skeleton loading"): shown on a card while its content is being changed,
+/// so you never see the old values under the new names.</summary>
+sealed class Skeleton : Control
+{
+    readonly (float W, int H)[] _bars; readonly int _left, _top;
+    readonly System.Windows.Forms.Timer _t = new() { Interval = 33 };
+    float _phase;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Color? Surface { get; set; }        // the color behind the bars (the page color when not inside a card)
+
+    public Skeleton((float W, int H)[] bars, int left, int top)
+    {
+        _bars = bars; _left = left; _top = top + 4;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        BackColor = Ui.CardBg;
+        _t.Tick += (_, _) => { _phase = (_phase + 0.022f) % 1.5f; Invalidate(); };
+        VisibleChanged += (_, _) => _t.Enabled = Visible;    // the animation only runs while it can be seen
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.Clear(Surface ?? Ui.CardBg);
+        var baseColor = Ui.Dark ? Color.FromArgb(46, 50, 60) : Color.FromArgb(230, 233, 240);
+        var shine = Ui.Dark ? Color.FromArgb(78, 84, 100) : Color.FromArgb(250, 251, 253);
+        int avail = Math.Max(10, Width - _left * 2);
+        float y = _top;
+        foreach (var (w, h) in _bars)
+        {
+            var r = new RectangleF(_left, y, avail * w, h);
+            using var path = RoundedRect(r, Math.Min(6, h / 2f));
+            using (var b = new SolidBrush(baseColor)) g.FillPath(b, path);
+            float bandW = Math.Max(30, r.Width * 0.35f), x = r.Left - bandW + (r.Width + bandW) * Math.Min(1f, _phase / 1.2f);
+            if (_phase <= 1.2f)
+            {
+                g.SetClip(path);
+                var band = new RectangleF(x, r.Top, bandW, r.Height);
+                using var lg = new System.Drawing.Drawing2D.LinearGradientBrush(band, Color.Transparent, Color.Transparent, System.Drawing.Drawing2D.LinearGradientMode.Horizontal)
+                { InterpolationColors = new System.Drawing.Drawing2D.ColorBlend { Colors = new[] { Color.FromArgb(0, shine), shine, Color.FromArgb(0, shine) }, Positions = new[] { 0f, 0.5f, 1f } } };
+                g.FillRectangle(lg, band);
+                g.ResetClip();
+            }
+            y += h + 12;
+        }
+    }
+
+    static System.Drawing.Drawing2D.GraphicsPath RoundedRect(RectangleF r, float radius)
+    {
+        float d = radius * 2; var p = new System.Drawing.Drawing2D.GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90); p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure(); return p;
+    }
+
+    protected override void Dispose(bool disposing) { if (disposing) _t.Dispose(); base.Dispose(disposing); }
+}
+
 /// <summary>A panel with a small icon + title header, optional icon buttons and an info tooltip on the right. Border color can mark state.
 /// Cards are never placed inside other cards.</summary>
 class Card : Panel
@@ -307,6 +363,41 @@ class Card : Panel
 
     public void SetTitle(string t) => _title.Text = Ui.T(t);
     public void SetIcon(string glyph) => _icon.Image = Ui.Glyph(glyph, 18, Ui.Muted);
+
+    // ---- loading placeholders: grey bars with a moving shine, shown while the content is being changed ----
+    Skeleton? _skel; readonly List<Control> _hidden = new();
+    public static readonly (float W, int H)[] DefaultBars = { (0.45f, 26), (0.8f, 12), (0.6f, 12) };
+
+    public void SetLoading(bool on, (float W, int H)[]? bars = null)
+    {
+        if (on && _skel is null)
+        {
+            _skel = new Skeleton(bars ?? DefaultBars, Body.Padding.Left, Body.Padding.Top) { Visible = false };
+            Body.Controls.Add(_skel);
+            Body.Resize += (_, _) => _skel?.SetBounds(0, 0, Body.Width, Body.Height);   // covers the whole body, whatever else is docked there
+            _skel.SetBounds(0, 0, Body.Width, Body.Height);
+        }
+        if (_skel is null) return;
+        _ = _skel.Handle;                 // realize it: DrawToBitmap (snapshots) skips controls that have no window yet
+        // hide what the bars replace (instead of relying on z-order: WM_PRINT paints overlapping siblings the wrong way round)
+        if (on) { foreach (Control c in Body.Controls) if (c != _skel && c.Visible) { c.Visible = false; _hidden.Add(c); } }
+        else { foreach (var c in _hidden) c.Visible = true; _hidden.Clear(); }
+        _skel.Visible = on;
+        if (on) _skel.BringToFront();
+    }
+
+    // ---- a small muted text at the right of the header (used for the network name) ----
+    Label? _badge;
+    public void SetBadge(string text)
+    {
+        if (_badge is null)
+        {
+            if (text.Length == 0) return;
+            _badge = new Label { AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9.5f), BackColor = Ui.CardBg, Padding = new Padding(0, 8, 8, 0) };
+            _right.Controls.Add(_badge);
+        }
+        _badge.Text = text; _badge.Visible = text.Length > 0;
+    }
 
     public void AddHeaderButton(string glyph, string tip, Action click)
     {

@@ -72,7 +72,8 @@ sealed class ConnectionsDialog : Form
 
     void Save()
     {
-        _engine.SetAdapterChoice(Picked(_main), Picked(_backup));
-        DialogResult = DialogResult.OK;
+        var (m, b) = (Picked(_main), Picked(_backup));
+        DialogResult = DialogResult.OK;                                  // close now; the engine applies it in the background
+        Task.Run(() => { try { _engine.SetAdapterChoice(m, b); } catch (Exception e) { Paths.AppendLog("Choosing connections failed: " + e.Message); } });
     }
 }
