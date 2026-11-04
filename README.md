@@ -4,29 +4,18 @@
 [![Release](https://img.shields.io/github/v/release/Sijan079/NetworkAutoSwitch)](https://github.com/Sijan079/NetworkAutoSwitch/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Windows tray app that keeps **two internet connections**, a main one (for example Wi-Fi) and a backup (for example a phone tether), and moves between them for you.
+**Do you live in an area where the Wi-Fi is unstable, so you often rely on mobile data to do anything on the Internet? And your data plan is limited, so you do not want downloads to use up every last bit of it?**
 
-- **Main connection loses internet** → it switches to the backup within seconds, and applies your **policy** so big downloads cannot eat your mobile data.
-- **Main connection comes back** → it switches back, lifts every policy block, and moves downloads that were running on the backup over to the main connection.
-- **You can lock it** to one connection if you do not want automatic switching.
+Network Auto Switch is a Windows tray app made for exactly that.
 
-Windows 10 and 11 (64-bit). It needs administrator rights, because it changes network metrics and firewall rules. The installer can set the app up to start already elevated when you sign in.
+- **Wi-Fi drops** → it moves you to your phone's connection within seconds, without a click, and keeps big downloads off your mobile data.
+- **Wi-Fi is back** → it moves you back, lets the blocked programs go, and moves downloads that had started on your phone over to the Wi-Fi.
+- **You stay in control** → set a daily data limit for your phone, choose which programs are watched, or lock it to one connection when you do not want it to switch.
 
-## The problem it solves
-
-If your home or office Wi-Fi is not completely reliable, and your phone can share its mobile data, you have probably lived this:
-
-1. **The Wi-Fi is "connected" but nothing loads.** The router is up and Windows shows a connection, but the internet behind it is gone. Windows keeps using it, and you notice only when a call freezes or a page times out. Switching by hand means opening the network menu, turning on your phone's tethering, and picking it, then undoing it all later.
-2. **Then your phone's data disappears.** The moment you are on the tether, game launchers, updaters and sync tools notice a "new" connection and start downloading gigabytes. A mobile plan that lasted the month can be gone in an evening.
-3. **And downloads stay stuck on the phone.** When the Wi-Fi comes back, a download that started on the tether often keeps running on it, so you keep paying for data you no longer need to use.
-
-Network Auto Switch fixes all three: it **notices a dead connection within seconds**, moves you to the backup without a click, **keeps big downloads off the backup** (only the programs you list, and only while they download fast, so a game or a video call is never cut off), then **moves you back and re-routes running downloads to the main connection** when it recovers. It also counts the data used on the backup, so you can set a daily limit.
-
-**If that sounds familiar, this is for you:** a phone-tether or second-connection backup, a flaky or shared Wi-Fi, a metered mobile plan, and programs that download in the background. It is **not** a VPN, a bonding tool (it never combines two connections) or a firewall: it only chooses which one connection Windows uses, and guards the backup.
+Windows 10 and 11 (64-bit). It needs administrator rights, because it changes network metrics and firewall rules; the installer can start it already elevated when you sign in.
 
 ## Contents
 
-- [The problem it solves](#the-problem-it-solves)
 - [Install](#install)
 - [Using the app](#using-the-app)
 - [How it works, in short](#how-it-works-in-short)
