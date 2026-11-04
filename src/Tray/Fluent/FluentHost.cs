@@ -30,6 +30,7 @@ static class FluentHost
         EnsureReady(getTheme());
         if (_settings is { IsLoaded: true }) { _settings.Activate(); return _settings; }
         _settings = new FluentSettingsWindow(engine, getTheme, setTheme, getMute, setMute);
+        ElementHost.EnableModelessKeyboardInterop(_settings);     // the WinForms message loop owns the keyboard: without this a WPF window gets no typing
         _settings.Closed += (_, _) => _settings = null;
         _settings.Show();
         return _settings;
