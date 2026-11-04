@@ -39,12 +39,13 @@
                                 Text="Seconds the main connection must work, without a single failed check, before moving back from the backup. Going to the backup is not affected."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Grid Width="150">
+                    <Border Width="150" Height="34" CornerRadius="4" BorderThickness="1" Background="{ui:ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}">
+                    <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <ui:Button Grid.Column="0" Width="34" Tag="RecoverBox|-1" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
-                        <ui:NumberBox Grid.Column="1" x:Name="RecoverBox" Margin="4,0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" TextAlignment="Center" PlaceholderText="Seconds"/>
-                        <ui:Button Grid.Column="2" Width="34" Tag="RecoverBox|1" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
-                    </Grid>
+                        <ui:Button Grid.Column="0" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="RecoverBox|-1" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
+                        <ui:NumberBox Grid.Column="1" x:Name="RecoverBox" Margin="0" Background="Transparent" BorderThickness="0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" TextAlignment="Center" PlaceholderText="Seconds"/>
+                        <ui:Button Grid.Column="2" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="RecoverBox|1" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
+                    </Grid></Border>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon AlertOff24}">
@@ -55,7 +56,7 @@
                                 Text="Hides the tray pop-ups. Everything is still written to the Log."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Grid Width="150"><ui:ToggleSwitch x:Name="MuteSwitch" HorizontalAlignment="Left"/></Grid>
+                    <Grid Width="150"><ui:ToggleSwitch x:Name="MuteSwitch" HorizontalAlignment="Right"/></Grid>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon ArrowDownload24}">
@@ -66,12 +67,13 @@
                                 Text="A watched program that receives more than this many megabytes within 10 seconds on the backup is blocked until you unblock it."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Grid Width="150">
+                    <Border Width="150" Height="34" CornerRadius="4" BorderThickness="1" Background="{ui:ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}">
+                    <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <ui:Button Grid.Column="0" Width="34" Tag="MbBox|-0.5" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
-                        <ui:NumberBox Grid.Column="1" x:Name="MbBox" Margin="4,0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="0.1" Maximum="10000" SmallChange="0.5" MaxDecimalPlaces="1" TextAlignment="Center" PlaceholderText="MB"/>
-                        <ui:Button Grid.Column="2" Width="34" Tag="MbBox|0.5" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
-                    </Grid>
+                        <ui:Button Grid.Column="0" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="MbBox|-0.5" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
+                        <ui:NumberBox Grid.Column="1" x:Name="MbBox" Margin="0" Background="Transparent" BorderThickness="0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="0.1" Maximum="10000" SmallChange="0.5" MaxDecimalPlaces="1" TextAlignment="Center" PlaceholderText="MB"/>
+                        <ui:Button Grid.Column="2" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="MbBox|0.5" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
+                    </Grid></Border>
                 </ui:CardControl>
             </StackPanel>
         </ScrollViewer>
