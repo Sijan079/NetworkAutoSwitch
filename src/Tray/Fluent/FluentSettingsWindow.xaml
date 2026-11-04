@@ -39,7 +39,7 @@
                                 Text="Seconds the main connection must work, without a single failed check, before moving back from the backup. Going to the backup is not affected."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <ui:NumberBox x:Name="RecoverBox" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" Width="120" PlaceholderText="Seconds"/>
+                    <ui:NumberBox ClearButtonEnabled="False" x:Name="RecoverBox" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" Width="120" PlaceholderText="Seconds"/>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon AlertOff24}">
@@ -62,7 +62,7 @@
                         </StackPanel>
                     </ui:CardControl.Header>
                     <StackPanel Orientation="Horizontal">
-                        <ui:NumberBox x:Name="MbBox" Minimum="0.1" Maximum="10000" SmallChange="0.5" Width="110"/>
+                        <ui:NumberBox ClearButtonEnabled="False" x:Name="MbBox" Minimum="0.1" Maximum="10000" SmallChange="0.5" Width="110"/>
                         <ui:TextBlock Text="MB per" VerticalAlignment="Center" Margin="10,0"/>
                         <ui:NumberBox x:Name="SecBox" Minimum="1" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" Width="120" ClearButtonEnabled="False"/>
                         <ui:TextBlock Text="s" VerticalAlignment="Center" Margin="10,0,0,0"/>
