@@ -18,6 +18,10 @@ public sealed class AppSettings
     public int RecoverSeconds { get; set; } = 10;
     /// <summary>When true the tray shows no pop-up notifications (everything still goes to the log).</summary>
     public bool MuteNotifications { get; set; } = false;
+    /// <summary>While the main connection is fine, the idle backup is checked this often (seconds, 1 to 60). Every check on a phone tether uses a little mobile data.</summary>
+    public int BackupCheckSeconds { get; set; } = 10;
+    /// <summary>Daily limit for data through the backup connection, in MB. 0 = no limit. You are told at 80 % and when it is reached.</summary>
+    public int DailyCapMB { get; set; } = 0;
 
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 

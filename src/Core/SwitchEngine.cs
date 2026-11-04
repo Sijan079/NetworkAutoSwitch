@@ -18,6 +18,31 @@ public sealed class SwitchEngine
     // Detection speed: 3 failed checks in a row (each gives up after ~1.2 s, re-checked at once) = about 4 s.
     // Coming back is deliberately slower and is a SETTING (default 10 s of good checks), so a flickering Wi-Fi does not bounce you between connections.
     const int FailAfter = 3;
+    // ---- idle-backup checks (every one costs a little mobile data) and the daily data cap ----
+    ProbeResult? _lastBackupRaw; DateTime? _lastBackupAt; string _lastBackupProbedName = ""; bool _lastPrimaryOk = true;
+    int _backupCheckSeconds = 10;
+    readonly string _usageFile; DataBudget _budget; long _capMb; long? _lastCounter; string _counterAdapter = ""; DateTime _budgetSavedAt = DateTime.UtcNow;
+    /// <summary>Raised when the backup's data today reaches 80 % of the daily cap, and when it reaches the cap: (level, bytes today, cap in bytes). Any thread.</summary>
+    public event Action<BudgetLevel, long, long>? BudgetAlert;
+    /// <summary>Seconds between checks of the idle backup while the main connection is fine.</summary>
+    public int BackupCheckSeconds => _backupCheckSeconds;
+    public void SetBackupCheckSeconds(int seconds)
+    {
+        _backupCheckSeconds = Math.Clamp(seconds, 1, 60);
+        AppSettings.Update(s => s.BackupCheckSeconds = _backupCheckSeconds, _settingsFile);
+        Log($"settings: the idle backup is checked every {_backupCheckSeconds} s");
+    }
+    /// <summary>The daily limit for the backup connection in MB (0 = none).</summary>
+    public int DailyCapMB => (int)_capMb;
+    public void SetDailyCapMB(int mb)
+    {
+        _capMb = Math.Max(0, mb); _budget.CapChanged();
+        AppSettings.Update(s => s.DailyCapMB = (int)_capMb, _settingsFile);
+        Log(_capMb == 0 ? "settings: no daily data cap on the backup" : $"settings: daily data cap on the backup is {_capMb} MB");
+    }
+    /// <summary>Bytes that went through the backup adapter today (everything on it, not just this app's programs).</summary>
+    public long BackupBytesToday => _budget.Today(DateTime.Now);
+
     VpnFallback.Backoff? _backoff; bool _degraded;
     /// <summary>True while a VPN refuses the per-connection internet check and the app works from what it can still know.</summary>
     public bool Degraded => _degraded;
@@ -107,6 +132,8 @@ public sealed class SwitchEngine
     public SwitchEngine(string primary, string backup, string policyFile, bool enforce, bool execute, int intervalSec, string? settingsFile = null)
     { _primaryArg = primary; _backupArg = backup; _policyFile = policyFile; _enforce = enforce; _execute = execute; _interval = intervalSec; _settingsFile = settingsFile;
       var saved = AppSettings.Load(settingsFile); _mode = saved.ConnectionMode; _userPrimary = saved.PrimaryAdapter ?? ""; _userBackup = saved.BackupAdapter ?? ""; _pName = saved.LastPrimary ?? ""; _bName = saved.LastBackup ?? "";
+      _backupCheckSeconds = Math.Clamp(saved.BackupCheckSeconds, 1, 60); _capMb = Math.Max(0, saved.DailyCapMB);
+      _usageFile = settingsFile is null ? Paths.UsageFile : Path.ChangeExtension(settingsFile, ".usage.json"); _budget = DataBudget.Load(_usageFile, DateTime.Now);
       _recoverSeconds = Math.Clamp(saved.RecoverSeconds, 3, 600); _recoverAfter = Math.Max(1, (int)Math.Round(_recoverSeconds / (double)Math.Max(1, intervalSec))); _mon.SetRecoverAfter(_recoverAfter);
       ResolveAdapters(initial: true); _ = Task.Run(RefreshNetworkNames); }
 
@@ -238,9 +265,14 @@ public sealed class SwitchEngine
                 ResolveAdapters();       // a phone plugged in, an adapter renamed or removed: noticed within a second
                 if (_namesDirty || DateTime.UtcNow - _namesAt > TimeSpan.FromSeconds(30)) { _namesDirty = false; _namesAt = DateTime.UtcNow; _ = Task.Run(RefreshNetworkNames); }   // which network each adapter is on (about 50 ms, off the loop)
                 string pn = _pName, bn = _bName;
+                // the idle backup is not checked every second (each check costs a little mobile data): see ProbeSchedule
+                bool activeIsBackup = (_mode == ConnectionMode.Auto ? _mon.Active : _locked) == Active.Backup;
+                bool probeB = ProbeSchedule.ProbeBackupNow(DateTime.UtcNow, _lastBackupAt, _backupCheckSeconds, activeIsBackup, _lastPrimaryOk, _lastBackupRaw?.Healthy ?? false,
+                    mustProbe: _lastBackupRaw is null || !bn.Equals(_lastBackupProbedName, StringComparison.OrdinalIgnoreCase));
                 var p = Task.Run(() => AdapterProber.Probe(pn), CancellationToken.None);
-                var b = Task.Run(() => AdapterProber.Probe(bn), CancellationToken.None);
+                var b = probeB ? Task.Run(() => AdapterProber.Probe(bn), CancellationToken.None) : Task.FromResult(_lastBackupRaw!);
                 var (pr, br) = (await p, await b);
+                if (probeB) { _lastBackupRaw = br; _lastBackupAt = DateTime.UtcNow; _lastBackupProbedName = bn; }
                 bool degraded = false;
                 if (VpnFallback.IsBlocked(pr) || VpnFallback.IsBlocked(br))
                 {
@@ -249,6 +281,7 @@ public sealed class SwitchEngine
                     (pr, br, degraded) = await Task.Run(() => VpnFallback.Apply(pr0, br0, activeIsPrimary, () => AdapterProber.ProbeAny(), n => VpnFallback.PingGateway(n)));
                 }
                 SetDegraded(degraded);
+                _lastPrimaryOk = pr.Healthy; TrackBackupData();
                 Decision d;
                 lock (_gate)
                 {
@@ -274,7 +307,7 @@ public sealed class SwitchEngine
                 }
                 var status = new EngineStatus(t, d.Active, pr, br, d.Changed, d.Reason, _paused,
                     _etw is null ? "" : $"etw={_etw.EventsMatched}/{_etw.EventsSeen}", _mode, degraded);
-                Stats.Record(status, DateTime.Now);
+                Stats.Record(status, DateTime.Now, backupFresh: probeB);
                 Status?.Invoke(status);
                 if (ticks == 0 || t < ticks)
                 {
@@ -288,8 +321,30 @@ public sealed class SwitchEngine
         {
             System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
             System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+            _budget.Save(_usageFile);
             Cleanup();
         }
+    }
+
+    /// <summary>Adds what the backup adapter carried since the last look to today's total, and says so when a limit is reached.</summary>
+    void TrackBackupData()
+    {
+        try
+        {
+            var nic = AdapterProber.Find(_bName);
+            if (nic is null) { _lastCounter = null; return; }
+            if (!nic.Name.Equals(_counterAdapter, StringComparison.OrdinalIgnoreCase)) { _counterAdapter = nic.Name; _lastCounter = null; }
+            var st = nic.GetIPv4Statistics(); long total = st.BytesReceived + st.BytesSent;
+            long delta = CounterDelta.Next(_lastCounter, total); _lastCounter = total;
+            long cap = _capMb * 1_000_000L;
+            if (_budget.Add(delta, DateTime.Now, cap) is BudgetLevel level)
+            {
+                Log(level == BudgetLevel.Reached ? $"DATA CAP reached: {_budget.Bytes / 1e6:0} MB of {_capMb} MB used on {_bName} today" : $"data cap warning: {_budget.Bytes / 1e6:0} MB of {_capMb} MB used on {_bName} today");
+                BudgetAlert?.Invoke(level, _budget.Bytes, cap);
+            }
+            if (DateTime.UtcNow - _budgetSavedAt > TimeSpan.FromSeconds(30)) { _budget.Save(_usageFile); _budgetSavedAt = DateTime.UtcNow; }
+        }
+        catch { /* the adapter vanished between two lines: the next tick starts over */ }
     }
 
     void SetDegraded(bool on)

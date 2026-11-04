@@ -8,6 +8,14 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+### Added
+- **Daily data limit for the backup connection** (Settings → Backup Data). You get a pop-up when the backup has carried 80 % of the limit today and when it is reached; the Dashboard shows *Backup Data Today*. The count is everything that goes through the backup adapter, survives restarts, and starts again at midnight.
+- **Setting: how often the idle backup is checked** (default every 10 s).
+
+### Changed
+- While the main connection is fine, the idle backup is now checked every 10 s instead of every second, which saves mobile data on a phone tether. Going to the backup is just as fast: it is checked at once when the main connection starts failing.
+- The *VPN: Limited Checks* badge is now just *VPN* (the tooltip explains it), and the Dashboard's Session card fits a fourth tile.
+
 ## [0.1.0] - 2026-11-04
 
 First release. Everything below is new.

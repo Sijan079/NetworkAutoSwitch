@@ -24,11 +24,11 @@ sealed class MainForm : Form
     readonly Label _banner = new() { Dock = DockStyle.Fill, Font = Ui.UiFont(17f, bold: true), TextAlign = ContentAlignment.MiddleLeft, BackColor = Ui.Bg, Text = "Starting..." };
     readonly Label _dryBadge = new() { Text = "Dry-Run", AutoSize = true, BackColor = Ui.AmberFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Margin = new Padding(0, 18, 14, 0) };
     Button _pauseBtn = new(), _resumeBtn = new(), _modeBtn = new();
-    readonly Label _vpnBadge = new() { Text = "VPN: Limited Checks", AutoSize = true, BackColor = Ui.BlueFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
+    readonly Label _vpnBadge = new() { Text = "VPN", AutoSize = true, BackColor = Ui.BlueFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
     readonly Label _lockBadge = new() { Text = "Locked", AutoSize = true, BackColor = Ui.BlueFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
     // dashboard: cards
     readonly AdapterCard _cardP, _cardB;
-    readonly Label _stSwitches = new(), _stOnBackup = new(), _stLast = new();
+    readonly Label _stSwitches = new(), _stOnBackup = new(), _stLast = new(), _stData = new();
     readonly LatencyChart _chart = new() { Dock = DockStyle.Fill };
     readonly ListView _usage = new();
     readonly System.Windows.Forms.Timer _refresh = new() { Interval = 2000 };
@@ -51,6 +51,7 @@ sealed class MainForm : Form
     readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Policy page reads it
     readonly PolicyEditor _editor;
     readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
+    readonly NoWheelNumeric _cap = new() { Minimum = 0, Maximum = 1_000_000, Increment = 100, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };
     readonly CheckBox _mute = new() { Text = "Mute Notifications", AutoSize = true, BackColor = Ui.CardBg };
     readonly Func<bool> _getMute; readonly Action<bool> _setMute;
     // loading placeholders (shown while the engine changes the network, so old values never show under new names)
@@ -207,11 +208,12 @@ sealed class MainForm : Form
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38)); bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
         var statsCard = new Card(Ui.Swap, "Session");
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Ui.CardBg };
-        for (int i = 0; i < 3; i++) tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = Ui.CardBg };
+        for (int i = 0; i < 4; i++) tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
         tiles.Controls.Add(Tile(Ui.Swap, _stSwitches, "Switches"), 0, 0);
         tiles.Controls.Add(Tile(Ui.Clock, _stOnBackup, "On Backup"), 0, 1);
         tiles.Controls.Add(Tile(Ui.Check, _stLast, "Last Switch"), 0, 2);
+        tiles.Controls.Add(Tile(Ui.Download, _stData, "Backup Data Today"), 0, 3);
         statsCard.Body.Controls.Add(tiles);
 
         var usageCard = new Card(Ui.Download, "Backup Data");
@@ -269,9 +271,9 @@ sealed class MainForm : Form
     static Control Tile(string glyph, Label value, string caption)
     {
         var p = new Panel { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
-        var icon = new PictureBox { Image = Ui.Glyph(glyph, 22, Ui.Muted), Location = new Point(0, 12), Size = new Size(30, 30), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
-        value.AutoSize = true; value.Font = Ui.UiFont(18f, bold: true); value.Location = new Point(40, 2); value.Text = "-"; value.BackColor = Ui.CardBg; value.ForeColor = Ui.Text;
-        var cap = new Label { Text = caption, AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9f), Location = new Point(42, 38), BackColor = Ui.CardBg };
+        var icon = new PictureBox { Image = Ui.Glyph(glyph, 22, Ui.Muted), Location = new Point(0, 8), Size = new Size(30, 30), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
+        value.AutoSize = true; value.Font = Ui.UiFont(15f, bold: true); value.Location = new Point(40, 0); value.Text = "-"; value.BackColor = Ui.CardBg; value.ForeColor = Ui.Text;
+        var cap = new Label { Text = caption, AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9f), Location = new Point(42, 28), BackColor = Ui.CardBg };
         p.Controls.Add(icon); p.Controls.Add(value); p.Controls.Add(cap);
         return p;
     }
@@ -305,6 +307,10 @@ sealed class MainForm : Form
         _stSwitches.Text = st.Switches.ToString();
         _stOnBackup.Text = onBackup.TotalHours >= 1 ? $"{(int)onBackup.TotalHours} h {onBackup.Minutes} min" : $"{(int)onBackup.TotalMinutes} min";
         _stLast.Text = st.LastSwitchAt is DateTime t ? t.ToString("HH:mm") : "None";
+        long today = _engine.BackupBytesToday; long capMb = _engine.DailyCapMB;
+        _stData.Text = capMb > 0 ? $"{Fmt(today)} of {capMb} MB" : Fmt(today);
+        _stData.ForeColor = capMb > 0 && DataBudget.LevelFor(today, capMb * 1_000_000L) == BudgetLevel.Reached ? Ui.Red : capMb > 0 && DataBudget.LevelFor(today, capMb * 1_000_000L) == BudgetLevel.Warning ? Ui.Amber : Ui.Text;
+        Ui.Tip.SetToolTip(_stData, "Everything that went through the backup connection today (all programs). The count starts again at midnight." + (capMb > 0 ? $" Your daily limit is {capMb} MB." : " Set a daily limit in Settings."));
         Ui.Tip.SetToolTip(_stLast, st.LastSwitchAt is null ? "No switch yet." : st.LastSwitchReason);
     }
 
@@ -535,7 +541,7 @@ sealed class MainForm : Form
         var status = new Label { AutoSize = true, Padding = new Padding(8, 9, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.Bg };
         _policyStatus.Add(status);
         bar.Controls.Add(Ui.Btn(Ui.Save, "Save", "Check everything, save it and apply it now.", () => { beforeSave?.Invoke(); SavePolicy(); }, BtnKind.Primary));
-        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", () => { _recover.Value = _engine.RecoverSeconds; LoadPolicy(); }));
+        bar.Controls.Add(Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", () => { _recover.Value = _engine.RecoverSeconds; _cap.Value = _engine.DailyCapMB; _backupCheck.Value = _engine.BackupCheckSeconds; LoadPolicy(); }));
         if (jsonButton) bar.Controls.Add(Ui.Btn(Ui.Code, "Edit As JSON", "Edit the same rules as text (for advanced use). Nothing is saved until you click Save.", EditJson));
         bar.Controls.Add(status);
         return bar;
@@ -588,8 +594,8 @@ sealed class MainForm : Form
     Control SettingsPage()
     {
         var page = Page();
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = Ui.Bg };
-        foreach (int h in new[] { 124, 124, 100, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = Ui.Bg };
+        foreach (int h in new[] { 124, 124, 100, 164, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // appearance: applies at once (the window is rebuilt in the new colors)
@@ -619,10 +625,21 @@ sealed class MainForm : Form
         nflow.Controls.Add(_mute);
         notes.Body.Controls.Add(nflow);
 
-        foreach (var c in new Control[] { appearance, switching, notes }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
-        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(_global, 0, 3);
+        // data on the backup (a phone tether is usually on a mobile plan)
+        var data = new Card(Ui.Download, "Backup Data");
+        data.SetHint("Daily limit: you are told when the backup has carried 80 % of it today, and when it is reached. The count is everything that goes through the backup adapter and starts again at midnight. 0 = no limit.\nIdle backup check: while the main connection is fine, the backup is checked this often. Every check uses a little mobile data; going to the backup stays just as fast.");
+        _cap.Value = Math.Min(_cap.Maximum, Math.Max(_cap.Minimum, _engine.DailyCapMB));
+        _backupCheck.Value = Math.Min(_backupCheck.Maximum, Math.Max(_backupCheck.Minimum, _engine.BackupCheckSeconds));
+        var dflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, BackColor = Ui.CardBg };
+        dflow.Controls.AddRange(new Control[] { L("Daily Limit"), _cap, L("MB  (0 = no limit)") });
+        dflow.SetFlowBreak(dflow.Controls[2], true);
+        dflow.Controls.AddRange(new Control[] { L("Check The Idle Backup Every"), _backupCheck, L("s") });
+        data.Body.Controls.Add(dflow);
+
+        foreach (var c in new Control[] { appearance, switching, notes, data }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
+        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(data, 0, 3); grid.Controls.Add(_global, 0, 4);
         page.Controls.Add(grid);
-        page.Controls.Add(ActionBar(beforeSave: () => _engine.SetRecoverSeconds((int)_recover.Value)));
+        page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); }));
         return page;
     }
 

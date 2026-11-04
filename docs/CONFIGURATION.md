@@ -7,6 +7,7 @@ Everything the app stores lives in **`C:\ProgramData\NetworkAutoSwitch\`**. All 
 | `policy.json` | The rules for the backup connection. The one you edit (first run copies `config\policy.json` there). Saving from the window keeps a `policy.json.bak`. |
 | `settings.json` | Theme, mode, chosen adapters, switch-back time, mute. Written by the app; edit it only while the app is closed. |
 | `log.txt` | The log (rotates at 1 MB into `log.txt.old`). |
+| `usage.json` | How much data went through the backup today (for the daily limit); starts again each day. |
 | `state.json` | The original network metrics, saved before the app changes anything. It exists **only while the app has changed your settings**; the app removes it after putting everything back. |
 
 Old files keep loading in newer versions: unknown fields are ignored and missing fields get defaults (see [RELEASING.md](RELEASING.md#what-users-can-rely-on-in-every-version)).
@@ -56,6 +57,8 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 | `LastPrimary`, `LastBackup` | empty | What detection chose last time (used only to keep the choice stable across restarts). |
 | `RecoverSeconds` | `10` | Seconds the main connection must work, without a single failed check, before moving back from the backup (3 to 600). |
 | `MuteNotifications` | `false` | Hide the tray pop-ups (everything is still logged). |
+| `BackupCheckSeconds` | `10` | While the main connection is fine, the idle backup is checked this often (1 to 60 s). Every check uses a little mobile data. |
+| `DailyCapMB` | `0` | Daily limit for data through the backup, in MB (`0` = no limit). You are told at 80 % and when it is reached. |
 
 ## Command-line options of the tray
 

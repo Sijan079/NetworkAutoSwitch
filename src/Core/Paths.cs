@@ -12,6 +12,7 @@ public static class Paths
             return d;
         }
     }
+    public static string UsageFile => Path.Combine(DataDir, "usage.json");
     public static string StateFile => Path.Combine(DataDir, "state.json");
     public static string LogFile => Path.Combine(DataDir, "log.txt");
     /// <summary>The one editable policy file, shared by the tray, the window and the CLI.

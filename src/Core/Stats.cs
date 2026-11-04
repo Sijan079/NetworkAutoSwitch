@@ -20,7 +20,9 @@ public sealed class StatsTracker
     public int ProbesBackup { get; private set; }
     public int FailBackup { get; private set; }
 
-    public void Record(EngineStatus s, DateTime now)
+    /// <param name="backupFresh">False when the backup was not really checked this time (its last result was reused): the chart repeats the last value,
+    /// but the uptime numbers only count real checks.</param>
+    public void Record(EngineStatus s, DateTime now, bool backupFresh = true)
     {
         lock (_l)
         {
@@ -28,7 +30,8 @@ public sealed class StatsTracker
             _lastAt = now; _lastActive = s.Active;
 
             Add(_p, new Sample(now, s.Primary.Healthy ? (int)s.Primary.Ms : null)); ProbesPrimary++; if (!s.Primary.Healthy) FailPrimary++;
-            Add(_b, new Sample(now, s.Backup.Healthy ? (int)s.Backup.Ms : null));   ProbesBackup++;  if (!s.Backup.Healthy) FailBackup++;
+            Add(_b, new Sample(now, s.Backup.Healthy ? (int)s.Backup.Ms : null));
+            if (backupFresh) { ProbesBackup++; if (!s.Backup.Healthy) FailBackup++; }
             if (s.Changed) { Switches++; LastSwitchAt = now; LastSwitchReason = s.Reason; }
         }
     }

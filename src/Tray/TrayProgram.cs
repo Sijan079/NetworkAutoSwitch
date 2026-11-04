@@ -114,6 +114,9 @@ sealed class TrayContext : ApplicationContext
         _engine.AdaptersChanged += () => { if (!_stopping) _ui.BeginInvoke(RebuildMenu); };
         // Blocks never expire by themselves, so tell the user and make the pop-up open the dashboard (where the Unblock buttons are).
         _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning)); };
+        // the daily data cap on the backup: a pop-up at 80 % and when it is reached (muted pop-ups are still in the log)
+        _engine.BudgetAlert += (level, used, cap) => { if (!_stopping) _ui.BeginInvoke(() => Notify(level == BudgetLevel.Reached
+            ? $"Daily data limit reached: {used / 1e6:0} MB of {cap / 1e6:0} MB used on {_backup} today." : $"{used / 1e6:0} MB of your {cap / 1e6:0} MB daily limit used on {_backup} today.", level == BudgetLevel.Reached ? ToolTipIcon.Warning : ToolTipIcon.Info)); };
         _icon.BalloonTipClicked += (_, _) => Open("Log");
         TrayProgram.OnCrash = msg => { if (!_stopping) _ui.BeginInvoke(() => Notify(msg, ToolTipIcon.Error)); };
         if (showWindow) Open("Dashboard");

@@ -34,6 +34,9 @@ The **engine is shared** by the tray app and the command-line tool, and it is th
 **Check each adapter separately, without adding routes.** An earlier prototype (`docs/legacy/probe-adapters.ps1`) added temporary routes to test each adapter. That needs administrator rights and can leave routes behind if it is killed.
 The app instead opens a TCP connection with a socket **pinned to one adapter** (`IP_UNICAST_IF`). Two public servers are tried at once (8.8.8.8 and 9.9.9.9), and either answering counts, so one provider's problem is never mistaken for an outage.
 
+**Cheap on mobile data.** A check on a phone tether costs a little data, so while the main connection is fine the idle backup is checked every 10 s (`ProbeSchedule`), not every second. It is checked at once when the main connection starts failing, when the backup is in use, and when it is down (a down backup costs nothing), so a switch never rests on stale news.
+Data used on the backup is counted from the adapter's own byte counter (`DataBudget`, `CounterDelta`), saved to `usage.json`, and compared with the daily limit.
+
 **Fast to leave, slow to return.** Windows saying "link down" switches at once. A quiet failure needs 3 failed checks in a row (about 4 s, and the engine re-checks after 150 ms once the main connection starts failing). Moving back needs a number of good seconds you choose in Settings, so a flickering connection cannot bounce the app between the two.
 
 **Metrics, not routes.** Preferring an adapter means giving it the lowest interface metric (5) and the other a high one (500), and setting the preferred adapter's default-route metric to 0 (a baked-in route metric once let the phone win by 5).
@@ -86,6 +89,7 @@ docs/                      these documents; docs/legacy holds the original proto
 | `DownloadGuard.cs` | The download watchdog and the ETW byte counter. | guard is **yes** |
 | `TcpMigrator.cs` | Lists and resets TCP connections (Windows API). | no |
 | `NetworkNames.cs` | Which Wi-Fi network each adapter is on (for example `SNcial_5G`). | parsing is **yes** |
+| `DataBudget.cs` | Today's data on the backup, the daily limit levels (80 %, reached), and `ProbeSchedule` (how often the idle backup is checked). | **yes** |
 | `Stats.cs`, `LogClassifier.cs` | Session statistics; what kind of log line this is (for coloring). | **yes** |
 | `AppSettings.cs`, `Paths.cs`, `AppInfo.cs` | Settings file, where files live, version and SemVer comparison. | mostly |
 

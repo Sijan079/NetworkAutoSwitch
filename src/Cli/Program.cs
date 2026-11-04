@@ -192,6 +192,42 @@ static class SelfTest
         for (int i = 0; i < 3; i++) q.Observe(false, true);
         q.Observe(true, false);
         Check("backup dies while primary is back: return immediately", q.Active == Active.Primary);
+        // ---- data cap and idle-backup checks ----
+        {
+            var day1 = new DateTime(2026, 5, 1, 10, 0, 0); long cap = 1000;
+            var bud = new DataBudget(DateOnly.FromDateTime(day1));
+            Check("budget: below 80 % -> no alert", bud.Add(700, day1, cap) is null && bud.Bytes == 700);
+            Check("budget: crossing 80 % -> Warning, once", bud.Add(150, day1, cap) == BudgetLevel.Warning && bud.Add(10, day1, cap) is null);
+            Check("budget: reaching the cap -> Reached, once", bud.Add(200, day1, cap) == BudgetLevel.Reached && bud.Add(500, day1, cap) is null && bud.Bytes == 1560);
+            Check("budget: a jump straight past the cap gives Reached (not Warning first)", new DataBudget(DateOnly.FromDateTime(day1)).Add(5000, day1, cap) == BudgetLevel.Reached);
+            Check("budget: cap 0 means no limit, never alerts", new DataBudget(DateOnly.FromDateTime(day1)).Add(99_999_999, day1, 0) is null);
+            Check("budget: the count starts again the next day, and alerts again", bud.Add(900, day1.AddDays(1), cap) == BudgetLevel.Warning && bud.Bytes == 900);
+            Check("budget: yesterday's data is not today's", bud.Today(day1.AddDays(2)) == 0);
+            bud.Add(500, day1.AddDays(2), cap); bud.CapChanged();
+            Check("budget: lowering the cap below usage announces at the next check", bud.Add(0, day1.AddDays(2), 400) == BudgetLevel.Reached);
+            Check("budget: negative bytes never reduce the total", new DataBudget(DateOnly.FromDateTime(day1), 100).Add(-50, day1, cap) is null);
+            string f = Path.Combine(Path.GetTempPath(), "nas-usage-test.json");
+            new DataBudget(DateOnly.FromDateTime(day1), 1234).Save(f);
+            Check("budget: today's count survives a restart", DataBudget.Load(f, day1.AddHours(3)).Bytes == 1234);
+            Check("budget: a saved count from another day is not used", DataBudget.Load(f, day1.AddDays(1)).Bytes == 0);
+            File.WriteAllText(f, "not json");
+            Check("budget: a damaged file gives a fresh count", DataBudget.Load(f, day1).Bytes == 0);
+            File.Delete(f);
+            Check("counter: first reading adds nothing", CounterDelta.Next(null, 5000) == 0);
+            Check("counter: normal growth", CounterDelta.Next(5000, 5600) == 600);
+            Check("counter: a counter that went down (adapter reset) adds nothing", CounterDelta.Next(5000, 40) == 0);
+
+            var t = new DateTime(2026, 5, 1, 12, 0, 0);
+            bool Due(double secAgo, bool activeBackup = false, bool primaryOk = true, bool backupOk = true, bool must = false) => ProbeSchedule.ProbeBackupNow(t, t.AddSeconds(-secAgo), 10, activeBackup, primaryOk, backupOk, must);
+            Check("schedule: idle backup checked 3 s ago -> skip", !Due(3));
+            Check("schedule: idle backup checked 10 s ago -> check", Due(10));
+            Check("schedule: never checked -> check", ProbeSchedule.ProbeBackupNow(t, null, 10, false, true, true, false));
+            Check("schedule: backup in use -> check every time", Due(1, activeBackup: true));
+            Check("schedule: main connection failing -> check the backup now", Due(1, primaryOk: false));
+            Check("schedule: backup is down -> check every time (costs no data)", Due(1, backupOk: false));
+            Check("schedule: a different adapter was chosen -> check now", Due(1, must: true));
+            Check("schedule: 1 s setting behaves like before", ProbeSchedule.ProbeBackupNow(t, t.AddSeconds(-1), 1, false, true, true, false));
+        }
         // ---- VPN fallback: a VPN that refuses the per-adapter check must not look like an outage ----
         {
             ProbeResult Den(string n) => new(n, 1, false, 0, "AccessDenied");
