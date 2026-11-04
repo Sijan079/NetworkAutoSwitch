@@ -1,20 +1,16 @@
-<ui:FluentWindow x:Class="NetworkAutoSwitch.Tray.Fluent.FluentSettingsWindow"
+<Page x:Class="NetworkAutoSwitch.Tray.Fluent.Pages.SettingsPage"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Network Auto Switch" Width="900" Height="720" MinWidth="640" MinHeight="520"
-        WindowStartupLocation="CenterScreen" ExtendsContentIntoTitleBar="True"
-        WindowBackdropType="Mica" WindowCornerPreference="Round">
+        xmlns:f="clr-namespace:NetworkAutoSwitch.Tray.Fluent"
+        Title="Settings">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <ui:TitleBar Grid.Row="0" Title="Network Auto Switch"/>
-
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="32,8,32,16" MaxWidth="820">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="32,8,32,16" MaxWidth="820" HorizontalAlignment="Stretch">
                 <ui:TextBlock Text="Settings" FontTypography="Title" Margin="0,0,0,16"/>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon PaintBrush24}">
@@ -31,6 +27,19 @@
                     </ComboBox>
                 </ui:CardControl>
 
+                <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon Window24}">
+                    <ui:CardControl.Header>
+                        <StackPanel>
+                            <ui:TextBlock Text="Style" FontTypography="BodyStrong"/>
+                            <ui:TextBlock TextWrapping="Wrap" Text="Fluent is the Windows 11 look. Classic is the original look. Applies the next time you open the window." Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </ui:CardControl.Header>
+                    <ComboBox x:Name="StyleBox" Width="150" SelectedIndex="1">
+                        <ComboBoxItem Content="Classic"/>
+                        <ComboBoxItem Content="Fluent"/>
+                    </ComboBox>
+                </ui:CardControl>
+
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon ArrowSwap24}">
                     <ui:CardControl.Header>
                         <StackPanel>
@@ -39,13 +48,7 @@
                                 Text="Seconds the main connection must work, without a single failed check, before moving back from the backup. Going to the backup is not affected."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Border Width="150" Height="34" CornerRadius="4" BorderThickness="1" Background="{ui:ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <ui:Button Grid.Column="0" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="RecoverBox|-1" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
-                        <ui:NumberBox Grid.Column="1" x:Name="RecoverBox" Margin="0" Background="Transparent" BorderThickness="0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" TextAlignment="Center" PlaceholderText="Seconds"/>
-                        <ui:Button Grid.Column="2" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="RecoverBox|1" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
-                    </Grid></Border>
+                    <f:Stepper x:Name="RecoverBox" Minimum="3" Maximum="600" Step="1" Decimals="0" Placeholder="Seconds"/>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon AlertOff24}">
@@ -67,18 +70,12 @@
                                 Text="A watched program that receives more than this many megabytes within 10 seconds on the backup is blocked until you unblock it."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Border Width="150" Height="34" CornerRadius="4" BorderThickness="1" Background="{ui:ThemeResource ControlFillColorDefaultBrush}" BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <ui:Button Grid.Column="0" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="MbBox|-0.5" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
-                        <ui:NumberBox Grid.Column="1" x:Name="MbBox" Margin="0" Background="Transparent" BorderThickness="0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="0.1" Maximum="10000" SmallChange="0.5" MaxDecimalPlaces="1" TextAlignment="Center" PlaceholderText="MB"/>
-                        <ui:Button Grid.Column="2" Width="36" Height="32" Appearance="Transparent" BorderThickness="0" Padding="0" Tag="MbBox|0.5" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
-                    </Grid></Border>
+                    <f:Stepper x:Name="MbBox" Minimum="0.1" Maximum="10000" Step="0.5" Decimals="1" Placeholder="MB"/>
                 </ui:CardControl>
             </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Row="2" Padding="32,12" Background="{ui:ThemeResource ControlFillColorDefaultBrush}">
+        <Border Grid.Row="1" Padding="32,12" Background="{ui:ThemeResource ControlFillColorDefaultBrush}">
             <StackPanel Orientation="Horizontal">
                 <ui:Button x:Name="SaveBtn" Content="Save" Appearance="Primary" Icon="{ui:SymbolIcon Save24}"/>
                 <ui:Button x:Name="RevertBtn" Content="Revert" Margin="8,0,0,0" Icon="{ui:SymbolIcon ArrowUndo24}"/>
@@ -86,4 +83,4 @@
             </StackPanel>
         </Border>
     </Grid>
-</ui:FluentWindow>
+</Page>

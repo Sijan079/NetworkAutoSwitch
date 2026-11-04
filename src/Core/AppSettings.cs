@@ -18,6 +18,8 @@ public sealed class AppSettings
     public int RecoverSeconds { get; set; } = 10;
     /// <summary>When true the tray shows no pop-up notifications (everything still goes to the log).</summary>
     public bool MuteNotifications { get; set; } = false;
+    /// <summary>"Classic" (the original look) or "Fluent" (the WPF UI look).</summary>
+    public string Style { get; set; } = "Classic";
 
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 
