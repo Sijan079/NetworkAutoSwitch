@@ -65,6 +65,11 @@ and is never offered as the latest release. Tags such as `-beta` without a numbe
 If the workflow fails, fix the cause and move the tag (`git tag -f`, `git push -f origin vX.Y.Z`) only if no release was created. If a release was created and is wrong,
 do not reuse the number: fix it and release the next PATCH.
 
+### Trying a release first
+
+For a risky release, tag a prerelease first (`Version` = `0.2.0-rc.1`, a `## [0.2.0-rc.1]` changelog section, tag `v0.2.0-rc.1`). The workflow publishes it as a **pre-release**,
+which is never offered as the latest release. When it checks out, repeat the steps with the final number and delete the prerelease (`gh release delete v0.2.0-rc.1 --cleanup-tag`).
+
 ## Building by hand
 
 Needs the .NET 9 SDK and [Inno Setup 6](https://jrsoftware.org/isinfo.php).

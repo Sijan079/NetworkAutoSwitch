@@ -5,7 +5,7 @@ using NetworkAutoSwitch.Core;
 
 namespace NetworkAutoSwitch.Tray;
 
-/// <summary>The app window: Dashboard (live status, latency, stats, backup data, blocks), Log (live, newest first), Policy (rules editor) and JSON.
+/// <summary>The app window: Dashboard (live status, latency, stats, backup data, blocks), Log (live, newest first), Policy (rules editor) and Settings.
 /// Every card sits directly on its page (cards are never nested). Closing the window hides it to the tray; Exit lives in the tray menu.</summary>
 sealed class MainForm : Form
 {
@@ -144,7 +144,7 @@ sealed class MainForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
 
-        // banner: status icon, status text, dry-run badge, theme menu, pause/resume
+        // banner: status icon, status text, badges (dry-run, VPN, locked), mode, pause/resume
         var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Ui.Bg, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58)); top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -687,7 +687,7 @@ sealed class MainForm : Form
     }
 }
 
-/// <summary>Menu look that follows the theme (used by the theme menu and the tray menu).</summary>
+/// <summary>Menu look that follows the theme (used by the mode menu and the tray menu).</summary>
 sealed class ThemedRenderer : ToolStripProfessionalRenderer
 {
     sealed class Colors : ProfessionalColorTable
