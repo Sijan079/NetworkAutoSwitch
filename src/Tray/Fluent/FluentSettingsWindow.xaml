@@ -24,7 +24,7 @@
                             <ui:TextBlock Text="Follow System switches with Windows' own light/dark setting." Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <ComboBox x:Name="ThemeBox" Width="220" SelectedIndex="0">
+                    <ComboBox x:Name="ThemeBox" Width="150" SelectedIndex="0">
                         <ComboBoxItem Content="Follow System"/>
                         <ComboBoxItem Content="Light"/>
                         <ComboBoxItem Content="Dark"/>
@@ -39,7 +39,12 @@
                                 Text="Seconds the main connection must work, without a single failed check, before moving back from the backup. Going to the backup is not affected."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <ui:NumberBox ClearButtonEnabled="False" x:Name="RecoverBox" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" Width="220" PlaceholderText="Seconds"/>
+                    <Grid Width="150">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <ui:Button Grid.Column="0" Width="34" Tag="RecoverBox|-1" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
+                        <ui:NumberBox Grid.Column="1" x:Name="RecoverBox" Margin="4,0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="3" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" TextAlignment="Center" PlaceholderText="Seconds"/>
+                        <ui:Button Grid.Column="2" Width="34" Tag="RecoverBox|1" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
+                    </Grid>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon AlertOff24}">
@@ -50,29 +55,23 @@
                                 Text="Hides the tray pop-ups. Everything is still written to the Log."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <Grid Width="220"><ui:ToggleSwitch x:Name="MuteSwitch" HorizontalAlignment="Left"/></Grid>
+                    <Grid Width="150"><ui:ToggleSwitch x:Name="MuteSwitch" HorizontalAlignment="Left"/></Grid>
                 </ui:CardControl>
 
                 <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon ArrowDownload24}">
                     <ui:CardControl.Header>
                         <StackPanel>
-                            <ui:TextBlock Text="Global Trigger: Amount" FontTypography="BodyStrong"/>
+                            <ui:TextBlock Text="Global Trigger" FontTypography="BodyStrong"/>
                             <ui:TextBlock TextWrapping="Wrap" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"
-                                Text="Megabytes a watched program may receive on the backup within the time below before it is blocked."/>
+                                Text="A watched program that receives more than this many megabytes within 10 seconds on the backup is blocked until you unblock it."/>
                         </StackPanel>
                     </ui:CardControl.Header>
-                    <ui:NumberBox x:Name="MbBox" ClearButtonEnabled="False" Minimum="0.1" Maximum="10000" SmallChange="0.5" Width="220" PlaceholderText="MB"/>
-                </ui:CardControl>
-
-                <ui:CardControl Margin="0,0,0,8" Icon="{ui:SymbolIcon Timer24}">
-                    <ui:CardControl.Header>
-                        <StackPanel>
-                            <ui:TextBlock Text="Global Trigger: Time Window" FontTypography="BodyStrong"/>
-                            <ui:TextBlock TextWrapping="Wrap" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"
-                                Text="Seconds over which the amount above is measured. A blocked program stays blocked until you unblock it."/>
-                        </StackPanel>
-                    </ui:CardControl.Header>
-                    <ui:NumberBox x:Name="SecBox" ClearButtonEnabled="False" Minimum="1" Maximum="600" SmallChange="1" MaxDecimalPlaces="0" Width="220" PlaceholderText="Seconds"/>
+                    <Grid Width="150">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <ui:Button Grid.Column="0" Width="34" Tag="MbBox|-0.5" Click="Step_Click" Icon="{ui:SymbolIcon Subtract16}" ToolTip="Less"/>
+                        <ui:NumberBox Grid.Column="1" x:Name="MbBox" Margin="4,0" ClearButtonEnabled="False" SpinButtonPlacementMode="Hidden" Minimum="0.1" Maximum="10000" SmallChange="0.5" MaxDecimalPlaces="1" TextAlignment="Center" PlaceholderText="MB"/>
+                        <ui:Button Grid.Column="2" Width="34" Tag="MbBox|0.5" Click="Step_Click" Icon="{ui:SymbolIcon Add16}" ToolTip="More"/>
+                    </Grid>
                 </ui:CardControl>
             </StackPanel>
         </ScrollViewer>

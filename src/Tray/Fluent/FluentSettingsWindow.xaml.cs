@@ -23,13 +23,21 @@ public partial class FluentSettingsWindow : FluentWindow
         MuteSwitch.Click += (_, _) => _setMute(MuteSwitch.IsChecked == true);
     }
 
+    /// <summary>The + and - buttons: Tag is "box name|step".</summary>
+    void Step_Click(object sender, RoutedEventArgs e)
+    {
+        var parts = ((FrameworkElement)sender).Tag.ToString()!.Split('|');
+        if (FindName(parts[0]) is NumberBox box)
+            box.Value = Math.Round(Math.Min(box.Maximum, Math.Max(box.Minimum, (box.Value ?? box.Minimum) + double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture))), 1);
+    }
+
     void LoadValues()
     {
         ThemeBox.SelectedIndex = (int)_getTheme();
         MuteSwitch.IsChecked = _getMute();
         RecoverBox.Value = _engine.RecoverSeconds;
         var g = ReadPolicy().Global;
-        MbBox.Value = g.MbPerWindow; SecBox.Value = g.WindowSec;
+        MbBox.Value = g.MbPerWindow;
     }
 
     static PolicyFile ReadPolicy()
@@ -42,7 +50,7 @@ public partial class FluentSettingsWindow : FluentWindow
         try
         {
             _engine.SetRecoverSeconds((int)(RecoverBox.Value ?? 10));
-            var next = ReadPolicy() with { Defaults = new WatchDefaults(MbBox.Value ?? 2, (int)(SecBox.Value ?? 10)) };
+            var next = ReadPolicy() with { Defaults = new WatchDefaults(MbBox.Value ?? 2, 10) };
             string json = BackupPolicy.ToJson(next); BackupPolicy.Parse(json);
             if (File.Exists(Paths.DefaultPolicy)) File.Copy(Paths.DefaultPolicy, Paths.DefaultPolicy + ".bak", true);
             File.WriteAllText(Paths.DefaultPolicy, json);
