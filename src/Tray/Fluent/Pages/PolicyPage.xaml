@@ -97,7 +97,7 @@
                                 <ui:ToggleSwitch x:Name="UseGlobal" Content="Use Global Trigger" IsChecked="True" ToolTip="Off = this rule gets its own trigger."/>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <f:Stepper x:Name="MbStepper" Minimum="0.1" Maximum="10000" Step="0.5" Decimals="1" Placeholder="MB"/>
-                                    <ui:TextBlock Text="MB within 10 s" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <ui:TextBlock x:Name="MbWindowLbl" Text="MB within 10 s" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"/>
                                 </StackPanel>
                             </StackPanel>
 

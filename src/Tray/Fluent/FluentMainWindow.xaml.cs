@@ -18,12 +18,14 @@ public partial class FluentMainWindow : FluentWindow
         InitializeComponent();
         Nav.SetPageProviderService(_pages);
         Title = $"Network Auto Switch {AppInfo.Version}"; Bar.Title = Title;
-        Loaded += (_, _) => { if (Nav.SelectedItem is null) Go("Dashboard"); };
+        Loaded += (_, _) => { if (Nav.SelectedItem is null || _want is not null) Go(_want ?? "Dashboard"); };
     }
 
     /// <summary>Opens a page by name (Dashboard, Log, Policy, Settings).</summary>
+    string? _want;      // the page asked for before the window finished loading
     public void Go(string page)
     {
+        _want = IsLoaded ? null : page;
         Type t = page.ToLowerInvariant() switch { "log" => typeof(LogPage), "policy" => typeof(PolicyPage), "settings" => typeof(SettingsPage), _ => typeof(DashboardPage) };
         Nav.Navigate(t);
     }

@@ -9,6 +9,8 @@ public partial class Stepper : System.Windows.Controls.UserControl
     public Stepper()
     {
         InitializeComponent();
+        // the mouse wheel must never change a number by accident: pass it on so the page scrolls instead
+        PreviewMouseWheel += (_, e) => { e.Handled = true; var up = new System.Windows.Input.MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = MouseWheelEvent, Source = this }; (Parent as UIElement)?.RaiseEvent(up); };
         Minus.Click += (_, _) => Nudge(-Step);
         Plus.Click += (_, _) => Nudge(Step);
         Box.ValueChanged += (_, _) => ValueChanged?.Invoke(this, EventArgs.Empty);

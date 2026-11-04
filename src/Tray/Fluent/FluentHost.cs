@@ -35,7 +35,6 @@ static class FluentHost
     /// <summary>Every modeless Fluent window goes through here: without the keyboard hook the WinForms message loop swallows typing.</summary>
     public static void Show(Window w)
     {
-        ElementHost.EnableModelessKeyboardInterop(w);
         w.Show();
         if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
         w.Activate();
@@ -44,14 +43,19 @@ static class FluentHost
     public static FluentMainWindow Main()
     {
         EnsureReady();
-        return _main ??= new FluentMainWindow(_cx!);
+        if (_main is null)
+        {
+            _main = new FluentMainWindow(_cx!);
+            ElementHost.EnableModelessKeyboardInterop(_main);       // once per window: each call adds a message filter that is never removed
+        }
+        return _main;
     }
 
     public static void ShowMain(string? page = null)
     {
         var w = Main();
-        if (page is not null || !w.IsLoaded) w.Go(page ?? "Dashboard");
-        Show(w);
+        Show(w);                                    // show first: the window selects Dashboard when it loads, so the page is chosen after that
+        if (page is not null) w.Go(page);
     }
 
     /// <summary>The "Choose Connections" dialog, over the Fluent window (or alone when it is not open).</summary>

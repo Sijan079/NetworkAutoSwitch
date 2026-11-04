@@ -100,6 +100,7 @@ public partial class PolicyPage : Page
             NameBox.Text = r.Name; TypeBox.SelectedIndex = Math.Max(0, Array.IndexOf(Actions, r.Action));
             ExesBox.Text = r.Exes; FolderBox.Text = r.Folder; PathBox.Text = r.Path;
             UseGlobal.IsChecked = r.UseGlobal;
+            MbWindowLbl.Text = $"MB within {r.WindowSec} s";
             MbStepper.Value = Math.Min(MbStepper.Maximum, Math.Max(MbStepper.Minimum, r.UseGlobal ? _defaults.MbPerWindow : r.Mb));
             KbpsStepper.Value = r.Kbps;
         }
