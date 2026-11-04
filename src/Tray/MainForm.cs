@@ -220,7 +220,6 @@ sealed class MainForm : Form
         actions.Controls.Add(Ui.Btn(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary));
         actions.Controls.Add(Ui.Btn(Ui.Refresh, "Reset", "Reset the counters.", () => { _engine.Usage.Reset(); RefreshUsage(); }));
         usageCard.Body.Controls.Add(_usage); usageCard.Body.Controls.Add(actions);
-        usageCard.Margin = new Padding(0, 0, 0, Ui.Gap);
         bottom.Controls.Add(statsCard, 0, 0); bottom.Controls.Add(usageCard, 1, 0);
 
         grid.Controls.Add(top, 0, 0); grid.Controls.Add(cards, 0, 1); grid.Controls.Add(_blockedCard, 0, 2); grid.Controls.Add(_allowedCard, 0, 3);
