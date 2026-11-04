@@ -2,7 +2,7 @@
   <!-- ONE place for the version. Everything else (exe file version, window/log text, the installer, the git tag check in CI) reads it from here.
        Rules for changing it: see docs/RELEASING.md. Format: MAJOR.MINOR.PATCH, optionally -prerelease (for example 0.2.0-beta.1). -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>Network Auto Switch</Product>
     <Authors>Sijan079</Authors>
     <Company>Sijan079</Company>

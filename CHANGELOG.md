@@ -8,6 +8,8 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
 ### Added
 - **Daily data limit for the backup connection** (Settings → Backup Data). You get a pop-up when the backup has carried 80 % of the limit today and when it is reached; the Dashboard shows *Backup Data Today*. The count is everything that goes through the backup adapter, survives restarts, and starts again at midnight.
 - **Setting: how often the idle backup is checked** (default every 10 s).
