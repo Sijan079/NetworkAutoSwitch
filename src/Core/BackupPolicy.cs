@@ -1,0 +1,129 @@
+using System.Diagnostics;
+using System.Text.Json;
+
+namespace NetworkAutoSwitch.Core;
+
+// action "block"    -> always blocked on the backup adapter (needs Path)
+// action "throttle" -> upload-only QoS cap (needs Path + Kbps)
+// action "watch"    -> download watchdog: blocks the program only while it pulls > MbPerWindow in WindowSec (needs Exes)
+// For "watch" rules, MbPerWindow / WindowSec are OPTIONAL: left out, the rule uses the global Defaults below.
+// A watch block never expires by itself; the user lifts it from the dashboard. (Old files with "cooldownSec" still load; it is ignored.)
+public record AppRule(string Name, string? Path, string Action, int Kbps = 0,
+                      string[]? Exes = null, double? MbPerWindow = null, int? WindowSec = null, string? Folder = null);
+
+/// <summary>The global trigger shared by every watch rule that doesn't set its own.</summary>
+public record WatchDefaults(double MbPerWindow = 2, int WindowSec = 10);
+
+public record PolicyFile(List<AppRule> BackupRules, WatchDefaults? Defaults = null)
+{
+    public WatchDefaults Global => Defaults ?? new WatchDefaults();
+    public double MbFor(AppRule r) => r.MbPerWindow ?? Global.MbPerWindow;
+    public int WindowFor(AppRule r) => r.WindowSec ?? Global.WindowSec;
+    public bool UsesGlobal(AppRule r) => r.MbPerWindow is null && r.WindowSec is null;
+}
+
+/// <summary>Rules that apply ONLY while on the backup network.
+/// block    -> outbound firewall rule scoped to the backup adapter (blocks both directions of the connection).
+/// throttle -> QoS policy capping the app's OUTBOUND rate (uploads). Windows QoS cannot cap downloads.
+/// Every object is named with Prefix so Remove() can clean up exactly what we created.</summary>
+public static class BackupPolicy
+{
+    public const string Prefix = "NetAutoSwitch-";
+
+    public static PolicyFile Load(string file) => Parse(File.ReadAllText(file));
+
+    /// <summary>Writes the policy as readable JSON (camelCase, zero/empty fields left out).</summary>
+    public static string ToJson(PolicyFile p) => JsonSerializer.Serialize(p, new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    });
+
+    /// <summary>Parses AND validates (unknown actions, missing fields). Throws with a readable message.</summary>
+    public static PolicyFile Parse(string json)
+    {
+        PolicyFile p;
+        try { p = JsonSerializer.Deserialize<PolicyFile>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })
+                  ?? throw new InvalidDataException("empty policy"); }
+        catch (JsonException e) { throw new InvalidDataException("Not valid JSON: " + e.Message); }
+        if (p.BackupRules is null) throw new InvalidDataException("missing \"backupRules\" list");
+        ApplyCommands(p, "validate");   // throws on bad rules
+        return p;
+    }
+
+    static string Q(string s) => "'" + s.Replace("'", "''") + "'";
+
+    public static List<string> ApplyCommands(PolicyFile p, string backupAdapter)
+    {
+        var cmds = new List<string>();
+        foreach (var r in p.BackupRules)
+        {
+            string id = Prefix + r.Name;
+            if (r.Action.Equals("watch", StringComparison.OrdinalIgnoreCase))
+            {
+                if (r.Exes is not { Length: > 0 }) throw new InvalidDataException($"rule '{r.Name}': watch needs exes");
+                continue; // handled live by DownloadGuard, nothing to create up front
+            }
+            if (string.IsNullOrWhiteSpace(r.Path)) throw new InvalidDataException($"rule '{r.Name}': path is required");
+            switch (r.Action.ToLowerInvariant())
+            {
+                case "block":
+                    cmds.Add($"New-NetFirewallRule -DisplayName {Q(id)} -Group {Q("NetAutoSwitch")} -Direction Outbound -Action Block " +
+                             $"-Program {Q(r.Path!)} -InterfaceAlias {Q(backupAdapter)} | Out-Null");
+                    break;
+                case "throttle":
+                    if (r.Kbps <= 0) throw new InvalidDataException($"rule '{r.Name}': throttle needs kbps > 0");
+                    cmds.Add($"New-NetQosPolicy -Name {Q(id)} -AppPathNameMatchCondition {Q(System.IO.Path.GetFileName(r.Path!))} " +
+                             $"-ThrottleRateActionBitsPerSecond {(long)r.Kbps * 1000} | Out-Null");
+                    break;
+                default:
+                    throw new InvalidDataException($"rule '{r.Name}': unknown action '{r.Action}' (use block or throttle)");
+            }
+        }
+        return cmds;
+    }
+
+    /// <summary>Removes everything this app created, even leftovers from a crash.</summary>
+    public static List<string> RemoveCommands() => new()
+    {
+        // "if ($x)" guards make "nothing to remove" a success instead of a failure exit code.
+        // A real removal error still throws (exit 1); the trailing "exit 0" only runs if nothing threw.
+        "$r = Get-NetFirewallRule -Group 'NetAutoSwitch' -ErrorAction SilentlyContinue; if ($r) { $r | Remove-NetFirewallRule -ErrorAction Stop }; exit 0",
+        $"$q = Get-NetQosPolicy -ErrorAction SilentlyContinue | Where-Object {{ $_.Name -like '{Prefix}*' }}; if ($q) {{ $q | Remove-NetQosPolicy -Confirm:$false -ErrorAction Stop }}; exit 0",
+    };
+
+    public static bool IsAdmin() =>
+        new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent())
+            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+
+    /// <summary>Runs independent commands AT THE SAME TIME (each in its own PowerShell). A switch used to take several seconds because
+    /// each command waited for the one before it; the commands here don't depend on each other, so the switch now costs about one command.
+    /// Returns 0 if all succeeded.</summary>
+    public static int RunParallel(IEnumerable<string> cmds, bool dryRun, Action<string>? log = null)
+    {
+        var list = cmds.ToList();
+        if (dryRun || list.Count <= 1) return Run(list, dryRun, log);
+        int failed = 0;
+        Parallel.ForEach(list, c => { if (Run(new[] { c }, false, log) != 0) Interlocked.Increment(ref failed); });
+        return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>dryRun=true only prints. Real execution needs admin.</summary>
+    public static int Run(IEnumerable<string> cmds, bool dryRun, Action<string>? log = null)
+    {
+        log ??= Console.WriteLine;
+        foreach (var c in cmds)
+        {
+            log((dryRun ? "[dry-run] " : "[run]     ") + c);
+            if (dryRun) continue;
+            var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
+            psi.ArgumentList.Add("-NoProfile"); psi.ArgumentList.Add("-Command"); psi.ArgumentList.Add(c);
+            using var proc = Process.Start(psi)!;
+            string err = proc.StandardError.ReadToEnd(); proc.WaitForExit();
+            if (proc.ExitCode != 0 || err.Length > 0) { log("  FAILED: " + err.Trim()); return 1; }
+        }
+        return 0;
+    }
+}

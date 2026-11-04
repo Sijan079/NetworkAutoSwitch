@@ -1,0 +1,5 @@
+{
+  "backupRules": [
+    { "name": "CurlTest", "action": "watch", "exes": ["curl.exe"], "mbPerWindow": 2, "windowSec": 5, "cooldownSec": 20 }
+  ]
+}

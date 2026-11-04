@@ -1,0 +1,9 @@
+{
+  "defaults": { "mbPerWindow": 2, "windowSec": 10 },
+  "backupRules": [
+    { "name": "Steam", "action": "watch", "exes": ["steam.exe"] },
+
+    { "name": "HoYoPlay", "action": "watch", "folder": "C:\\Program Files\\HoYoPlay",
+      "exes": ["HYP.exe", "HYPWorker.exe", "HYPHelper.exe", "HYUpdater.exe", "launcher.exe"] }
+  ]
+}
