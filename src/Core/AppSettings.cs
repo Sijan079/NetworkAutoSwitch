@@ -18,6 +18,8 @@ public sealed class AppSettings
     public int RecoverSeconds { get; set; } = 10;
     /// <summary>When true the tray shows no pop-up notifications (everything still goes to the log).</summary>
     public bool MuteNotifications { get; set; } = false;
+    /// <summary>First-run welcome: false = still to be shown (set on a brand-new install), true = shown, missing = installed before the welcome existed (never shown).</summary>
+    public bool? Welcomed { get; set; }
     /// <summary>While the main connection is fine, the idle backup is checked this often (seconds, 1 to 60). Every check on a phone tether uses a little mobile data.</summary>
     public int BackupCheckSeconds { get; set; } = 10;
     /// <summary>Daily limit for data through the backup connection, in MB. 0 = no limit. You are told at 80 % and when it is reached.</summary>

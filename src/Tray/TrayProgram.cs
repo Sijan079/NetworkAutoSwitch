@@ -105,6 +105,7 @@ sealed class TrayContext : ApplicationContext
         _mode = mode; _saveTheme = saveTheme;
         _ = _ui.Handle;
         MakeIcons();
+        if (!dryRun && !File.Exists(AppSettings.DefaultFile)) AppSettings.Update(x => x.Welcomed = false);      // a brand-new install: the welcome is still to be shown
         _engine = new SwitchEngine(primary, backup, Paths.DefaultPolicy, enforce: true, execute: !dryRun, interval);
         _engine.Log = m => { Paths.AppendLog(m); _window?.AddLog(m); };
         _icon = new NotifyIcon { Icon = _grey, Visible = true, ContextMenuStrip = BuildMenu(), Text = "Network Auto Switch: starting" };
@@ -120,6 +121,7 @@ sealed class TrayContext : ApplicationContext
         _icon.BalloonTipClicked += (_, _) => Open("Log");
         TrayProgram.OnCrash = msg => { if (!_stopping) _ui.BeginInvoke(() => Notify(msg, ToolTipIcon.Error)); };
         if (showWindow) Open("Dashboard");
+        if (!dryRun && AppSettings.Load().Welcomed == false) ShowWelcomeSoon();
 
         // --snapshot <folder>: dry-run helper. After 20 s save PNGs of each tab, then quit (no screen capture involved).
         var snap = Environment.GetCommandLineArgs().SkipWhile(a => a != "--snapshot").Skip(1).FirstOrDefault();
@@ -160,6 +162,27 @@ sealed class TrayContext : ApplicationContext
     void SetMute(bool on) { _mute = on; try { AppSettings.Update(x => x.MuteNotifications = on); } catch { } }
 
     // ---------- theme ----------
+    /// <summary>The first-run welcome, a few seconds after start so the adapters and Wi-Fi names are known. Shown once.</summary>
+    void ShowWelcomeSoon()
+    {
+        var t = new System.Windows.Forms.Timer { Interval = 4000 };
+        t.Tick += (_, _) =>
+        {
+            t.Stop(); t.Dispose();
+            if (_stopping) return;
+            try
+            {
+                AppSettings.Update(x => x.Welcomed = true);          // never again, even if it is closed with the X
+                using var dlg = new WelcomeDialog(_engine);
+                dlg.ShowDialog();
+                bool want = dlg.StartAtSignIn; string exe = Environment.ProcessPath ?? "";
+                if (want != StartupTask.IsEnabled()) Task.Run(() => StartupTask.Set(want, exe, _engine.Log));
+            }
+            catch (Exception e) { Paths.AppendLog("welcome failed: " + e.Message); }
+        };
+        t.Start();
+    }
+
     void Open(string page) => _window?.ShowWindow(page);
 
     void SetThemeMode(ThemeMode m)

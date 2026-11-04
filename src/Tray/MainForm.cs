@@ -219,7 +219,7 @@ sealed class MainForm : Form
         statsCard.Body.Controls.Add(tiles);
 
         var usageCard = new Card(Ui.Download, "Backup Data");
-        usageCard.SetHint("Data received on the backup this session.\nPeak = a program's fastest 10 seconds. Set a rule's trigger between a program's idle value and its download peak.");
+        usageCard.SetHint("Data received on the backup today (kept across restarts, starts again at midnight).\nPeak = a program's fastest 10 seconds. Set a rule's trigger between a program's idle value and its download peak.");
         Ui.StyleList(_usage);
         _usage.Columns.Add("Program", 190); _usage.Columns.Add("Total", 100, HorizontalAlignment.Right); _usage.Columns.Add("Peak 10 s", 100, HorizontalAlignment.Right); _usage.Columns.Add("Watch List", 100);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, BackColor = Ui.CardBg, Padding = new Padding(0, Ui.Gap, 0, 0) };
@@ -596,9 +596,10 @@ sealed class MainForm : Form
     Control SettingsPage()
     {
         var page = Page();
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7, BackColor = Ui.Bg };
-        foreach (int h in new[] { 124, 124, 100, 110, 164, 124 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        // the cards are stacked at fixed heights inside a panel that scrolls, so a small window can still reach every card
+        int[] heights = { 124, 124, 100, 110, 164, 124, 124 };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = heights.Length, BackColor = Ui.Bg, Height = heights.Sum() };
+        foreach (int h in heights) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
 
         // appearance: applies at once (the window is rebuilt in the new colors)
         var appearance = new Card(Ui.Brightness, "Appearance");
@@ -647,9 +648,32 @@ sealed class MainForm : Form
         dflow.Controls.AddRange(new Control[] { L("Check The Idle Backup Every"), _backupCheck, L("s") });
         data.Body.Controls.Add(dflow);
 
-        foreach (var c in new Control[] { appearance, switching, notes, startup, data }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
-        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(_global, 0, 5);
-        page.Controls.Add(grid);
+        // about: the version, and a way to ask GitHub whether a newer one exists (only when you click; the app never checks by itself)
+        var about = new Card(Ui.Info, "About");
+        about.SetHint("Asks GitHub for the latest release when you click the button. Nothing about you is sent, and the app never checks on its own.");
+        var updStatus = new Label { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Padding = new Padding(8, 8, 0, 0) };
+        string releaseUrl = UpdateCheck.ReleasesPage;
+        var openRelease = Ui.Btn(Ui.OpenFile, "Open Release Page", "Open the release page in your browser.", () => { try { Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true }); } catch { } }, BtnKind.Primary);
+        openRelease.Visible = false;
+        Button? checkBtn = null;
+        checkBtn = Ui.Btn(Ui.Refresh, "Check For Updates", "Ask GitHub whether a newer version exists.", async () =>
+        {
+            checkBtn!.Enabled = false; updStatus.ForeColor = Ui.Muted; updStatus.Text = "Checking...";
+            var r = await UpdateCheck.CheckAsync(AppInfo.Version);
+            releaseUrl = r.Url; updStatus.Text = r.Message;
+            updStatus.ForeColor = r.State == UpdateState.Available ? Ui.Amber : r.State == UpdateState.Failed ? Ui.Red : Ui.Green;
+            openRelease.Visible = r.State == UpdateState.Available; checkBtn.Enabled = true;
+        });
+        var aflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 0, 0) };
+        aflow.Controls.Add(new Label { Text = "Version " + AppInfo.Version, AutoSize = true, ForeColor = Ui.Text, BackColor = Ui.CardBg, Padding = new Padding(2, 8, 14, 0) });
+        aflow.Controls.AddRange(new Control[] { checkBtn, updStatus, openRelease });
+        about.Body.Controls.Add(aflow);
+
+        foreach (var c in new Control[] { appearance, switching, notes, startup, data, about }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
+        grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(_global, 0, 5); grid.Controls.Add(about, 0, 6);
+        var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Ui.Bg };
+        scroll.Controls.Add(grid);
+        page.Controls.Add(scroll);
         page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); }));
         return page;
     }
@@ -717,6 +741,13 @@ sealed class MainForm : Form
         using var cb = new Bitmap(cd.Width, cd.Height);
         cd.DrawToBitmap(cb, new Rectangle(0, 0, cd.Width, cd.Height));
         cb.Save(Path.Combine(folder, "connections.png"));
+        // the first-run welcome, the same way
+        using var wd = new WelcomeDialog(_engine);
+        wd.StartPosition = FormStartPosition.Manual; wd.Location = new Point(-32000, -32000); wd.Opacity = 0;
+        wd.Show(); Application.DoEvents();
+        using var wb = new Bitmap(wd.Width, wd.Height);
+        wd.DrawToBitmap(wb, new Rectangle(0, 0, wd.Width, wd.Height));
+        wb.Save(Path.Combine(folder, "welcome.png"));
         cd.Close();
     }
 

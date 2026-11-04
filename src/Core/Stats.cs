@@ -64,7 +64,50 @@ public sealed class NetUsage
     public long Total { get; private set; }
     readonly Dictionary<string, string> _paths = new(StringComparer.OrdinalIgnoreCase);   // program name -> where it was last seen running from
 
+    DateOnly _day = DateOnly.FromDateTime(DateTime.Now);
+
     public void Add(string exePath, long bytes) => Add(exePath, bytes, DateTime.UtcNow);
+
+    /// <summary>The totals are for one calendar day (local time): a new day starts them again, like "Backup Data Today".</summary>
+    public DateOnly Day { get { lock (_l) return _day; } }
+    public void RollTo(DateOnly today) { if (today != _day) { ResetCore(); _day = today; } }
+
+    // ---- remembered across restarts (same day only) ----
+    sealed record SavedProgram(string Name, string Path, long Bytes, long Peak);
+    sealed record SavedUsage(string Day, List<SavedProgram> Programs);
+
+    public void Save(string file)
+    {
+        try
+        {
+            lock (_l)
+            {
+                var list = _by.Select(kv => new SavedProgram(kv.Key, _paths.GetValueOrDefault(kv.Key, kv.Key), kv.Value, _peak.GetValueOrDefault(kv.Key))).ToList();
+                File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(new SavedUsage(_day.ToString("yyyy-MM-dd"), list)));
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>Loads what was saved earlier TODAY (a file from another day is ignored). Never throws.</summary>
+    public void LoadFrom(string file, DateOnly today)
+    {
+        try
+        {
+            var s = System.Text.Json.JsonSerializer.Deserialize<SavedUsage>(File.ReadAllText(file));
+            if (s is null || !DateOnly.TryParseExact(s.Day, "yyyy-MM-dd", out var d) || d != today) return;
+            lock (_l)
+            {
+                ResetCore(); _day = d;
+                foreach (var p in s.Programs ?? new())
+                {
+                    if (string.IsNullOrWhiteSpace(p.Name) || p.Bytes < 0) continue;
+                    _by[p.Name] = p.Bytes; _paths[p.Name] = p.Path ?? p.Name; _peak[p.Name] = Math.Max(0, p.Peak); Total += p.Bytes;
+                }
+            }
+        }
+        catch { }
+    }
 
     /// <summary>Programs that used data on the backup, biggest first, with the full path (so a rule can be made in one click).</summary>
     public List<SeenProgram> Seen()
@@ -81,6 +124,7 @@ public sealed class NetUsage
     {
         lock (_l)
         {
+            RollTo(DateOnly.FromDateTime(DateTime.Now));
             var n = Path.GetFileName(exePath);
             _paths[n] = exePath;
             _by[n] = _by.GetValueOrDefault(n) + bytes; Total += bytes;
@@ -103,5 +147,6 @@ public sealed class NetUsage
         lock (_l) return _by.OrderByDescending(kv => kv.Value).Take(n).Select(kv => (kv.Key, kv.Value, _peak.GetValueOrDefault(kv.Key))).ToList();
     }
 
-    public void Reset() { lock (_l) { _by.Clear(); _paths.Clear(); _win.Clear(); _winSum.Clear(); _peak.Clear(); Total = 0; } }
+    public void Reset() { lock (_l) ResetCore(); }
+    void ResetCore() { _by.Clear(); _paths.Clear(); _win.Clear(); _winSum.Clear(); _peak.Clear(); Total = 0; }
 }

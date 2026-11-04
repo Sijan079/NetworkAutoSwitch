@@ -228,6 +228,33 @@ static class SelfTest
             Check("schedule: a different adapter was chosen -> check now", Due(1, must: true));
             Check("schedule: 1 s setting behaves like before", ProbeSchedule.ProbeBackupNow(t, t.AddSeconds(-1), 1, false, true, true, false));
         }
+        // ---- per-program data survives a restart (same day) ----
+        {
+            var today = DateOnly.FromDateTime(DateTime.Now); string pf = Path.Combine(Path.GetTempPath(), "nas-programs-test.json");
+            var u1 = new NetUsage(); u1.Add(@"C:\Games\steam.exe", 5_000_000); u1.Add(@"C:\Games\steam.exe", 7_000_000); u1.Add(@"C:\Tools\x.exe", 100);
+            u1.Save(pf);
+            var u2 = new NetUsage(); u2.LoadFrom(pf, today);
+            Check("programs: totals, peak and path come back after a restart", u2.Total == 12_000_100 && u2.TopWithPeak(5)[0].Name == "steam.exe" && u2.TopWithPeak(5)[0].Bytes == 12_000_000 && u2.PeakFor("steam.exe") == 12_000_000 && u2.PathFor("steam.exe") == @"C:\Games\steam.exe");
+            var u3 = new NetUsage(); u3.LoadFrom(pf, today.AddDays(1));
+            Check("programs: a file from another day is ignored", u3.Total == 0 && u3.Seen().Count == 0);
+            File.WriteAllText(pf, "{ nope"); var u4 = new NetUsage(); u4.LoadFrom(pf, today);
+            Check("programs: a damaged file is ignored", u4.Total == 0);
+            u1.RollTo(today.AddDays(1));
+            Check("programs: a new day starts the totals again", u1.Total == 0 && u1.Seen().Count == 0);
+            File.Delete(pf);
+        }
+        // ---- check for updates (the parsing and the decision; the network call itself is not tested here) ----
+        {
+            const string rel = "{\"tag_name\":\"v0.2.0\",\"html_url\":\"https://github.com/Sijan079/NetworkAutoSwitch/releases/tag/v0.2.0\",\"prerelease\":false}";
+            Check("update: reads the version and link from GitHub's answer", UpdateCheck.ParseLatest(rel) is ("0.2.0", var link) && link.EndsWith("v0.2.0"));
+            Check("update: a newer release is offered", UpdateCheck.Decide("0.1.0", rel).State == UpdateState.Available && UpdateCheck.Decide("0.1.0", rel).Latest == "0.2.0");
+            Check("update: the same version is up to date (build number ignored)", UpdateCheck.Decide("0.2.0+abc1234", rel).State == UpdateState.UpToDate);
+            Check("update: a newer installed version is up to date", UpdateCheck.Decide("0.3.0", rel).State == UpdateState.UpToDate);
+            Check("update: a prerelease of the same number is older than the release", UpdateCheck.Decide("0.2.0-rc.1", rel).State == UpdateState.Available);
+            Check("update: 0.10.0 is newer than 0.9.0", UpdateCheck.Decide("0.9.0", rel.Replace("0.2.0", "0.10.0")).State == UpdateState.Available);
+            Check("update: nonsense is a failure, not a crash", UpdateCheck.Decide("0.1.0", "not json").State == UpdateState.Failed && UpdateCheck.Decide("0.1.0", "{\"tag_name\":\"latest\"}").State == UpdateState.Failed && UpdateCheck.Decide("0.1.0", null).State == UpdateState.Failed);
+            Check("update: a link that is not https is replaced by the releases page", UpdateCheck.ParseLatest("{\"tag_name\":\"v1.0.0\",\"html_url\":\"javascript:alert(1)\"}") is ("1.0.0", var safe) && safe == UpdateCheck.ReleasesPage);
+        }
         // ---- start when I sign in ----
         {
             string enable = StartupTask.EnableCommand(@"C:\Program Files\Network Auto Switch\NetworkAutoSwitchTray.exe");

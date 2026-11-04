@@ -21,7 +21,7 @@ public sealed class SwitchEngine
     // ---- idle-backup checks (every one costs a little mobile data) and the daily data cap ----
     ProbeResult? _lastBackupRaw; DateTime? _lastBackupAt; string _lastBackupProbedName = ""; bool _lastPrimaryOk = true;
     int _backupCheckSeconds = 10;
-    readonly string _usageFile; DataBudget _budget; long _capMb; long? _lastCounter; string _counterAdapter = ""; DateTime _budgetSavedAt = DateTime.UtcNow;
+    readonly string _usageFile, _programsFile; DataBudget _budget; long _capMb; long? _lastCounter; string _counterAdapter = ""; DateTime _budgetSavedAt = DateTime.UtcNow;
     /// <summary>Raised when the backup's data today reaches 80 % of the daily cap, and when it reaches the cap: (level, bytes today, cap in bytes). Any thread.</summary>
     public event Action<BudgetLevel, long, long>? BudgetAlert;
     /// <summary>Seconds between checks of the idle backup while the main connection is fine.</summary>
@@ -134,6 +134,7 @@ public sealed class SwitchEngine
       var saved = AppSettings.Load(settingsFile); _mode = saved.ConnectionMode; _userPrimary = saved.PrimaryAdapter ?? ""; _userBackup = saved.BackupAdapter ?? ""; _pName = saved.LastPrimary ?? ""; _bName = saved.LastBackup ?? "";
       _backupCheckSeconds = Math.Clamp(saved.BackupCheckSeconds, 1, 60); _capMb = Math.Max(0, saved.DailyCapMB);
       _usageFile = settingsFile is null ? Paths.UsageFile : Path.ChangeExtension(settingsFile, ".usage.json"); _budget = DataBudget.Load(_usageFile, DateTime.Now);
+      _programsFile = settingsFile is null ? Paths.ProgramsFile : Path.ChangeExtension(settingsFile, ".programs.json"); if (execute) Usage.LoadFrom(_programsFile, DateOnly.FromDateTime(DateTime.Now));       // a dry run (tests, snapshots with sample data) never reads or writes the real file
       _recoverSeconds = Math.Clamp(saved.RecoverSeconds, 3, 600); _recoverAfter = Math.Max(1, (int)Math.Round(_recoverSeconds / (double)Math.Max(1, intervalSec))); _mon.SetRecoverAfter(_recoverAfter);
       ResolveAdapters(initial: true); _ = Task.Run(RefreshNetworkNames); }
 
@@ -321,7 +322,7 @@ public sealed class SwitchEngine
         {
             System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
             System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
-            _budget.Save(_usageFile);
+            _budget.Save(_usageFile); if (_execute) Usage.Save(_programsFile);
             Cleanup();
         }
     }
@@ -342,7 +343,7 @@ public sealed class SwitchEngine
                 Log(level == BudgetLevel.Reached ? $"DATA CAP reached: {_budget.Bytes / 1e6:0} MB of {_capMb} MB used on {_bName} today" : $"data cap warning: {_budget.Bytes / 1e6:0} MB of {_capMb} MB used on {_bName} today");
                 BudgetAlert?.Invoke(level, _budget.Bytes, cap);
             }
-            if (DateTime.UtcNow - _budgetSavedAt > TimeSpan.FromSeconds(30)) { _budget.Save(_usageFile); _budgetSavedAt = DateTime.UtcNow; }
+            if (DateTime.UtcNow - _budgetSavedAt > TimeSpan.FromSeconds(30)) { _budget.Save(_usageFile); if (_execute) Usage.Save(_programsFile); _budgetSavedAt = DateTime.UtcNow; }
         }
         catch { /* the adapter vanished between two lines: the next tick starts over */ }
     }

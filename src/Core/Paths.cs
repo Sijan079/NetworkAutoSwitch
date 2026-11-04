@@ -12,6 +12,7 @@ public static class Paths
             return d;
         }
     }
+    public static string ProgramsFile => Path.Combine(DataDir, "programs.json");
     public static string UsageFile => Path.Combine(DataDir, "usage.json");
     public static string StateFile => Path.Combine(DataDir, "state.json");
     public static string LogFile => Path.Combine(DataDir, "log.txt");
