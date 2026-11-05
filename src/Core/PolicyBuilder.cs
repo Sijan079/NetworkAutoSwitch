@@ -6,10 +6,10 @@ public static class PolicyBuilder
     /// <summary>Is this program already covered by a watch rule? Same test everywhere: file name listed AND folder matches (or the rule has no folder).</summary>
     public static bool IsCovered(string path, IEnumerable<AppRule> rules)
     {
-        string file = Path.GetFileName(path), dir = Path.GetDirectoryName(path) ?? "";
+        string file = Path.GetFileName(path);
         return rules.Any(r => r.Action.Equals("watch", StringComparison.OrdinalIgnoreCase)
             && (r.Exes ?? Array.Empty<string>()).Any(e => e.Equals(file, StringComparison.OrdinalIgnoreCase))
-            && (r.Folder is null || dir.StartsWith(r.Folder, StringComparison.OrdinalIgnoreCase)));
+            && r.InFolder(path));
     }
 
     /// <summary>When the main connection returns, which programs get their backup connections reset so they reconnect over it?
@@ -39,8 +39,18 @@ public static class PolicyBuilder
         string baseName = stem.Length > 0 ? char.ToUpperInvariant(stem[0]) + stem[1..] : "Rule", name = baseName;   // "steam" -> "Steam"
         for (int i = 2; rules.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase)); i++) name = $"{baseName} {i}";
 
-        // one shared install folder narrows the rule to that install; programs from several folders get no folder filter
-        string? folder = dirs.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 && dirs[0].Length > 0 ? dirs[0] : null;
-        return (new AppRule(name, null, "watch", Exes: files.ToArray(), Folder: folder), skipped);
+        // the folders of the picked programs narrow the rule to those installs: a launcher and its game live in different folders, and both are kept (one bundle)
+        var (folder, folders) = FromLines(string.Join("\n", dirs));
+        return (new AppRule(name, null, "watch", Exes: files.ToArray(), Folder: folder, Folders: folders), skipped);
     }
+
+    /// <summary>One folder per line (the Policy page's folder box) to the rule's fields: none = (null, null), one = "folder", several = "folders".</summary>
+    public static (string? Folder, string[]? Folders) FromLines(string text)
+    {
+        var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()).Where(l => l.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return lines.Count == 0 ? (null, null) : lines.Count == 1 ? (lines[0], null) : (null, lines.ToArray());
+    }
+
+    /// <summary>The folder box text for a rule: one folder per line.</summary>
+    public static string ToLines(AppRule r) => string.Join("\r\n", r.AllFolders());
 }

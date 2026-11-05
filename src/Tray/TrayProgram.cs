@@ -114,6 +114,9 @@ sealed class TrayContext : ApplicationContext
         _window = NewWindow();
         _engine.AdaptersChanged += () => { if (!_stopping) _ui.BeginInvoke(RebuildMenu); };
         // Blocks never expire by themselves, so tell the user and make the pop-up open the dashboard (where the Unblock buttons are).
+        _engine.SameNetworkChanged += same => { if (same && !_stopping) _ui.BeginInvoke(() => NotifyAlways("Your main and backup connections are on the same network. If it fails, you have no backup.", ToolTipIcon.Warning)); };
+        _engine.MainProtectionChanged += on => { if (on && _engine.MainProtectionAlarm && !_stopping) _ui.BeginInvoke(() => NotifyAlways("Your main connection is on a backup network (your phone?). Mobile data may be in use. Open the dashboard to fix it.", ToolTipIcon.Warning)); };
+        _engine.NetworkNeedsLabel += net => { if (!_stopping) _ui.BeginInvoke(() => AskNetworkRole(net)); };
         _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning)); };
         // the daily data cap on the backup: a pop-up at 80 % and when it is reached (muted pop-ups are still in the log)
         _engine.BudgetAlert += (level, used, cap) => { if (!_stopping) _ui.BeginInvoke(() => Notify(level == BudgetLevel.Reached
@@ -219,7 +222,7 @@ sealed class TrayContext : ApplicationContext
         _status = new ToolStripMenuItem(string.IsNullOrEmpty(_status?.Text) ? "Starting..." : _status.Text) { Enabled = false };
         _pause = new ToolStripMenuItem(_engineIsPaused ? "Resume" : "Pause", Ui.Glyph(_engineIsPaused ? Ui.Play : Ui.Pause, 16, Ui.Text), (_, _) => TogglePause());
         var modeMenu = new ToolStripMenuItem("Mode", Ui.Glyph(Ui.Swap, 16, Ui.Text));
-        foreach (var (m, text) in new[] { (ConnectionMode.Auto, "Automatic"), (ConnectionMode.StayPrimary, $"Stay On {_primary}"), (ConnectionMode.StayBackup, $"Stay On {_backup}") })
+        foreach (var (m, text) in new[] { (ConnectionMode.Auto, "Automatic"), (ConnectionMode.StayPrimary, $"Stay On {Ui.Role("Main", _engine.PrimaryNetwork, _primary)}"), (ConnectionMode.StayBackup, $"Stay On {Ui.Role("Backup", _engine.BackupNetwork, _backup)}") })
             modeMenu.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => _engine.SetConnectionMode(m)) { Checked = _engine.ConnMode == m });
         modeMenu.DropDownItems.Add(new ToolStripSeparator());
         modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => _window?.ChooseConnections()));
@@ -257,8 +260,7 @@ sealed class TrayContext : ApplicationContext
         if (_stopping) return;        // a status can still be queued when the tray is quitting: the icon is already gone by then
         _lastStatus = s;
         _icon.Icon = IconFor(s);
-        string Net(string? n) => string.IsNullOrEmpty(n) ? "" : $" – {n}";
-        string which = s.Paused ? "Paused" : s.Active == Active.Primary ? $"On {_primary}{Net(_engine.PrimaryNetwork)}" : $"On Backup ({_backup}{Net(_engine.BackupNetwork)})";
+        string which = s.Paused ? "Paused" : s.Active == Active.Primary ? $"On {Ui.Role("Main", _engine.PrimaryNetwork, _primary)}" : $"On {Ui.Role("Backup", _engine.BackupNetwork, _backup)}";
         if (s.Mode != ConnectionMode.Auto && !s.Paused) which += " [Locked]";
         string line = $"{which} | {_primary}: {(s.Primary.Healthy ? s.Primary.Ms + "ms" : "down")} | {_backup}: {(s.Backup.Healthy ? s.Backup.Ms + "ms" : "down")}";
         _status.Text = line;
@@ -266,7 +268,7 @@ sealed class TrayContext : ApplicationContext
         if (s.Changed)
         {
             Paths.AppendLog($"SWITCH -> {s.Active}: {s.Reason}");
-            Notify(s.Active == Active.Backup ? $"{_primary} lost internet. Switched to {_backup}." : $"{_primary} is back. Switched back.", ToolTipIcon.Info);
+            Notify(s.Active == Active.Backup ? "Main lost internet. Switched to the backup." : "Main is back. Switched back.", ToolTipIcon.Info);
         }
     }
 
@@ -304,6 +306,18 @@ sealed class TrayContext : ApplicationContext
     }
 
     readonly bool _quiet = Environment.GetCommandLineArgs().Contains("--snapshot");   // snapshot test runs show no pop-ups
+    /// <summary>Asked once per network that is on neither table. "Later" = ask again the next time the app starts.</summary>
+    void AskNetworkRole(string net)
+    {
+        if (_stopping) return;
+        using var d = new NetworkRoleDialog(net);
+        d.ShowDialog();
+        if (d.Answer != NetworkRole.Unlabelled) _engine.SetNetworkRole(net, d.Answer);
+    }
+
+    /// <summary>For warnings about your data: shown even when you muted notifications (only the snapshot test runs stay silent).</summary>
+    void NotifyAlways(string text, ToolTipIcon kind) { if (!_quiet) _icon.ShowBalloonTip(8000, "Network Auto Switch", text, kind); }
+
     void Notify(string text, ToolTipIcon kind) { if (!_quiet && !_mute) _icon.ShowBalloonTip(4000, "Network Auto Switch", text, kind); }
 
     /// <summary>Stops the engine and waits (max 20 s) so it can restore metrics and remove rules.</summary>

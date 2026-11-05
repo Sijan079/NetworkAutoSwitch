@@ -5,9 +5,9 @@ Everything the app stores lives in **`C:\ProgramData\NetworkAutoSwitch\`**. All 
 | File | What it holds |
 |---|---|
 | `policy.json` | The rules for the backup connection. The one you edit (first run copies `config\policy.json` there). Saving from the window keeps a `policy.json.bak`. |
-| `settings.json` | Theme, mode, chosen adapters, switch-back time, mute. Written by the app; edit it only while the app is closed. |
+| `settings.json` | Theme, mode, your Main and Backup network tables, chosen adapters, switch-back time, mute. Written by the app; edit it only while the app is closed. |
 | `log.txt` | The log (rotates at 1 MB into `log.txt.old`). |
-| `programs.json` | Data each program used on the backup today (the table on the Dashboard); starts again each day. |
+| `programs.json` | What each program downloaded and uploaded today, and on which connection (the Network Activity table on the Dashboard); starts again each day. |
 | `usage.json` | How much data went through the backup today (for the daily limit); starts again each day. |
 | `state.json` | The original network metrics, saved before the app changes anything. It exists **only while the app has changed your settings**; the app removes it after putting everything back. |
 
@@ -20,13 +20,25 @@ The task starts the copy you turned it on from; turning it on again from another
 
 ## Your connections
 
-The app **finds your connections by itself**: the main one (Wi-Fi or a wired adapter) and a backup (a phone tethered over USB, Bluetooth or mobile broadband).
-VPNs, virtual machines and the hidden driver layers Windows lists next to every adapter are ignored. It looks again whenever something is plugged in or changes,
-so a phone plugged in later is picked up, and a renamed adapter does not matter.
+Sort your networks in **Mode, then Choose Connections** (in the window or the tray menu). The role belongs to the **network** (its name, for example `SNcial`), not to an adapter, so it holds on whichever adapter that network is on.
 
-To choose yourself, use **Mode, then Choose Connections** (in the window or the tray menu), and pick the main and the backup, or leave either on *Automatic*.
+| Mode | Main table | Backup table |
+|---|---|---|
+| **Blacklist** | Networks barred from being main. They are always backup. | Networks barred from being backup. They are always main. |
+| **Whitelist** | The only networks allowed to be main. | The only networks allowed to be backup. |
+
+- Each mode keeps its **own** pair of tables, so switching mode never changes what a list means.
+- A network on neither table is **unlabelled**. The app asks once (Main, Backup or Later) and treats it as a backup until you sort it, so a forgotten network can only cost a blocked download, never your data.
+- A network that may not be main but ends up as the main connection is **protected like the backup** (the dashboard shows *MAIN IS PHONE*): watch-list downloads are blocked on it and its data counts toward the daily limit. A network that may not be the backup is never used as the backup.
+- Both adapters on the **same network** (same router) show a *SAME NETWORK* badge: switching cannot help, because both fail together.
+- A phone tethered over USB, Bluetooth or mobile broadband is recognised as a backup by its adapter type, because Windows gives those generic names.
+- Names are read from Windows' connection profiles. While Windows is still identifying the **main** adapter's network (`Identifying...`, or no name yet) the main connection is **protected** (fail closed) and the app looks again every 2 seconds. If Windows gives no names for any adapter, the lookup itself is broken: nothing can be judged, nothing is blocked, and the log says so once.
+- The *SAME NETWORK* check compares the router's address and hardware address. If the hardware address cannot be read, two networks with different names are not reported as the same.
+
+The **adapters** (Wi-Fi, Ethernet, tethers) are found by the app; VPNs, virtual machines and the hidden driver layers Windows lists next to every adapter are ignored. They only decide the roles when the tables cannot, for example for a network you have not sorted yet.
+To fix an adapter yourself, tick **Choose adapters myself** in the same window.
 With only one connection there is no backup: the app keeps measuring and tells you, and changes nothing.
-`nas-cli --list-adapters` shows what was found and why.
+`nas-cli --list-adapters` shows what was found, and which network each adapter is on.
 
 ## Policy file
 
@@ -37,6 +49,8 @@ With only one connection there is no backup: the app keeps measuring and tells y
     { "name": "Steam", "action": "watch", "exes": ["steam.exe"] },
     { "name": "HoYoPlay", "action": "watch", "folder": "C:\\Program Files\\HoYoPlay",
       "exes": ["HYP.exe", "HYPWorker.exe", "launcher.exe"], "mbPerWindow": 5 },
+    { "name": "Endfield", "action": "watch", "folders": ["C:\\Program Files\\GRYPHLINK", "D:\\Sijan\\EndField Game"],
+      "exes": ["Launcher.exe", "Updater.exe", "PlatformProcess.exe", "Endfield.exe"] },
     { "name": "Updater", "action": "block", "path": "C:\\Tools\\updater.exe" },
     { "name": "Backup tool", "action": "throttle", "path": "C:\\Tools\\sync.exe", "kbps": 500 }
   ]
@@ -46,7 +60,8 @@ With only one connection there is no backup: the app keeps measuring and tells y
 | Part | Meaning |
 |---|---|
 | `defaults` | The **global trigger**: a watched program that receives more than `mbPerWindow` megabytes within `windowSec` seconds on the backup is blocked. Every watch rule uses it unless it has its own numbers. |
-| `watch` | Needs `exes` (file names, one per program). `folder` is optional: use it when two launchers share a file name. `mbPerWindow` and `windowSec` are optional per-rule overrides. List launchers and downloaders, **never games**, so a game is never cut off. |
+| `watch` | Needs `exes` (file names, one per program). `folder` (one) or `folders` (several) is optional: use it when two launchers share a file name. `mbPerWindow` and `windowSec` are optional per-rule overrides. |
+| a **game bundle** | One `watch` rule for a game: its launcher, its updater **and the game itself**, with the launcher's folder and the game's folder in `folders`. Many games download their own data from the game, not from the launcher, so the game must be in the bundle. A watch rule only blocks while the program downloads faster than the trigger (2 MB per 10 s by default), so normal gameplay is not cut off. |
 | `block` | Needs `path`. Blocks that program on the backup adapter only. |
 | `throttle` | Needs `path` and `kbps`. Windows can only cap **uploads** this way. |
 
@@ -59,7 +74,10 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 |---|---|---|
 | `Theme` | `System` | `System`, `Light` or `Dark` |
 | `Mode` | `Auto` | `Auto`, `StayPrimary` or `StayBackup` |
-| `PrimaryAdapter`, `BackupAdapter` | empty | Adapter names you chose. Empty = detect automatically. |
+| `NetworkListMode` | `Blacklist` | `Blacklist` or `Whitelist`: how the two tables are read (see *Your connections*). |
+| `BlacklistMainNetworks`, `BlacklistBackupNetworks` | empty | The two tables in Blacklist mode: networks barred from main, networks barred from backup. |
+| `WhitelistMainNetworks`, `WhitelistBackupNetworks` | empty | The two tables in Whitelist mode: the only networks allowed as main, as backup. |
+| `PrimaryAdapter`, `BackupAdapter` | empty | Adapter names you chose under *Advanced*. Empty = detect automatically. Only used when the tables cannot decide. |
 | `LastPrimary`, `LastBackup` | empty | What detection chose last time (used only to keep the choice stable across restarts). |
 | `RecoverSeconds` | `10` | Seconds the main connection must work, without a single failed check, before moving back from the backup (3 to 600). |
 | `MuteNotifications` | `false` | Hide the tray pop-ups (everything is still logged). |
@@ -73,7 +91,7 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 | Option | Does |
 |---|---|
 | `--quit` | Asks the running copy to exit cleanly (restores the network first). No admin needed. |
-| `--primary <name>` / `--backup <name>` | Fix an adapter instead of detecting it. |
+| `--primary <name>` / `--backup <name>` | Fix an adapter instead of detecting it (the network tables can still override it). |
 | `--dry-run` | Run without changing anything on the PC. |
 | `--show` | Open the window at start. |
 | `--theme light\|dark` | Force a theme for this run (not saved). |

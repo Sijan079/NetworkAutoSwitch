@@ -24,12 +24,15 @@ sealed class MainForm : Form
     readonly Label _banner = new() { Dock = DockStyle.Fill, Font = Ui.UiFont(17f, bold: true), TextAlign = ContentAlignment.MiddleLeft, BackColor = Ui.Bg, Text = "Starting..." };
     readonly Label _dryBadge = new() { Text = "Dry-Run", AutoSize = true, BackColor = Ui.AmberFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Margin = new Padding(0, 18, 14, 0) };
     Button _pauseBtn = new(), _resumeBtn = new(), _modeBtn = new();
+    readonly Label _sameBadge = new() { Text = "SAME NETWORK", AutoSize = true, BackColor = Ui.Amber, ForeColor = Color.Black, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
+    readonly Label _phoneMainBadge = new() { Text = "MAIN IS PHONE", AutoSize = true, BackColor = Ui.Amber, ForeColor = Color.Black, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
     readonly Label _vpnBadge = new() { Text = "VPN", AutoSize = true, BackColor = Ui.BlueFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
     readonly Label _lockBadge = new() { Text = "Locked", AutoSize = true, BackColor = Ui.BlueFill, ForeColor = Color.White, Font = Ui.UiFont(9f, bold: true), Padding = new Padding(8, 3, 8, 3), Visible = false };
     // dashboard: cards
     readonly AdapterCard _cardP, _cardB;
     readonly Label _stSwitches = new(), _stOnBackup = new(), _stLast = new(), _stData = new();
     readonly LatencyChart _chart = new() { Dock = DockStyle.Fill };
+    readonly ChartLegend _legend = new() { BackColor = Ui.CardBg, ForeColor = Ui.Muted, Font = Ui.UiFont(9.5f) };
     readonly ListView _usage = new();
     readonly System.Windows.Forms.Timer _refresh = new() { Interval = 2000 };
     // watchdog blocks + manual override
@@ -37,6 +40,19 @@ sealed class MainForm : Form
     readonly ListView _blockedList = new() { MultiSelect = true };
     readonly NoWheelComboBox _grace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 172, Margin = new Padding(0, 0, 0, 10) };
     TableLayoutPanel _grid = new();
+    const float ChartPct = 27, BottomPct = 73;                        // the two stretching rows (percent of what is left)
+    const int BlockedRowHeight = 172, AllowedRowHeight = 190, DashboardMinHeight = 880;
+    Control[] _sessionTiles = Array.Empty<Control>();
+    readonly TableLayoutPanel _tilesGrid = new() { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
+    readonly TableLayoutPanel _bottom = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
+    readonly Label _blockedEmpty = new() { Dock = DockStyle.Fill, Text = "Nothing is blocked. Programs the watchdog stops show up here.", ForeColor = Ui.Muted, BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0) };
+    FlowLayoutPanel? _blockedSide;
+    bool _allowedShown;
+    string _sortKey = "total"; bool _sortFlip;
+    static readonly string[] UsageKeys = { "program", "total", "backup", "trigger", "watch" };      // the sort key of each Network Activity column, left to right
+    Panel? _dashPage;
+    readonly Panel _warnBar = new() { Dock = DockStyle.Fill, Padding = new Padding(16, 0, 8, 0), Visible = false, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
+    readonly Label _warnText = new() { Dock = DockStyle.Fill, ForeColor = Color.White, BackColor = Color.Transparent, Font = Ui.UiFont(10f, bold: true), TextAlign = ContentAlignment.MiddleLeft };
     // programs you unblocked: countdown until the watchdog watches them again
     readonly Card _allowedCard = new(Ui.Eye, "Allowed For Now");
     readonly ListView _allowedList = new() { MultiSelect = true };
@@ -72,10 +88,10 @@ sealed class MainForm : Form
         _engine = engine; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme; _getMute = getMute; _setMute = setMute;
         _editor = new PolicyEditor(_global) { Dock = DockStyle.Fill };
         _policyPath = Paths.DefaultPolicy;
-        Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1000; Height = 900; MinimumSize = new Size(860, 640);
+        Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1000; Height = 1000; MinimumSize = new Size(860, 640);
         StartPosition = FormStartPosition.CenterScreen; Font = Ui.UiFont(9.5f); BackColor = Ui.Bg; ForeColor = Ui.Text;
         Icon = Ui.AppIcon(Ui.Blue);
-        _cardP = new AdapterCard(Ui.AdapterGlyph(_engine.PrimaryKind), _primary); _cardB = new AdapterCard(Ui.AdapterGlyph(_engine.BackupKind), _backup);
+        _cardP = new AdapterCard(Ui.AdapterGlyph(_engine.PrimaryKind), "Main"); _cardB = new AdapterCard(Ui.AdapterGlyph(_engine.BackupKind), "Backup");
         _ = Handle;
 
         _tabs.AddPage("dashboard", "Dashboard", Ui.Home, DashboardPage());
@@ -111,7 +127,7 @@ sealed class MainForm : Form
     void SetLoading(bool on)
     {
         _loading = on; _loadingTimeout.Stop();
-        _cardP.SetLoading(on); _cardB.SetLoading(on); _chartCard.SetLoading(on, ChartBars);
+        _cardP.SetLoading(on, AdapterCard.Bars); _cardB.SetLoading(on, AdapterCard.Bars); _chartCard.SetLoading(on, ChartBars);
         _ = _bannerSkeleton.Handle; _banner.Visible = !on; _bannerSkeleton.Visible = on; if (on) _loadingTimeout.Start(); else _awaitStatus = false;
     }
 
@@ -141,12 +157,13 @@ sealed class MainForm : Form
         var page = Page();
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = Ui.Bg };
         _grid = grid;
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));      // blocked: height 0 until something is blocked
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));      // allowed: height 0 until you have unblocked something
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
+        _dashPage = page; page.AutoScroll = true; FitDashboardHeight();      // a small window scrolls instead of squeezing the cards
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));                 // 0  status
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));                  // 1  warning banner: height 0 until the main connection is a backup network (or both are one network)
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));                // 2  the two connection cards
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, ChartPct));            // 3  latency
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));                  // 4  allowed: height 0 until you have unblocked something
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, BottomPct));           // 5  Session (a quarter of the width, both rows high), Network Activity above Blocked
 
         // banner: status icon, status text, badges (dry-run, VPN, locked), mode, pause/resume
         var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Ui.Bg, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
@@ -163,11 +180,13 @@ sealed class MainForm : Form
         _resumeBtn.Visible = false;
         // badge, theme button and Pause/Resume share ONE row container, so they are all vertically centered on the same line
         // (the badge is shorter than the buttons, so it gets a little extra top margin to sit in the middle)
-        _dryBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _lockBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _vpnBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0);
+        _dryBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _lockBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _vpnBadge.Margin = new Padding(0, (Ui.BtnH - 26) / 2, 12, 0); _sameBadge.Margin = _vpnBadge.Margin; _phoneMainBadge.Margin = _vpnBadge.Margin;
+        Ui.Tip.SetToolTip(_phoneMainBadge, "The main connection is on a network you marked as your phone / limited data, so it gets the backup's protections: heavy downloads on your watch list are blocked and its data counts toward the daily limit. Change it in Choose Connections.");
+        Ui.Tip.SetToolTip(_sameBadge, "The main and the backup connection are on the same network (same router), so if that network fails, both fail and switching cannot help. Connect one of them to a different network, for example your phone's hotspot.");
         Ui.Tip.SetToolTip(_vpnBadge, "A VPN (such as Cloudflare WARP) refuses the internet check on a single connection. The app checks the connection in use through the VPN and the other one by its gateway, so it cannot confirm the other connection has internet before switching to it. For exact checks, exclude 8.8.8.8 and 9.9.9.9 from the VPN (in WARP: Preferences, Advanced, Split Tunnels, Exclude IPs).");
         _pauseBtn.Margin = _resumeBtn.Margin = new Padding(0);
         var cluster = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, (68 - Ui.BtnH) / 2 - Ui.Gap / 2, 0, 0) };
-        cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_vpnBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
+        cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_sameBadge); cluster.Controls.Add(_phoneMainBadge); cluster.Controls.Add(_vpnBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
         top.Controls.Add(_bannerIcon, 0, 0); top.Controls.Add(_banner, 1, 0); top.Controls.Add(_bannerSkeleton, 1, 0); top.Controls.Add(cluster, 2, 0);
 
         // adapters
@@ -178,17 +197,19 @@ sealed class MainForm : Form
 
         // blocked-now card (override controls)
         Ui.StyleList(_blockedList);
-        _blockedList.Columns.Add("Program", 340); _blockedList.Columns.Add("Rule", 120); _blockedList.Columns.Add("Since", 90);
+        _blockedList.Columns.Add("Program", 380); _blockedList.Columns.Add("Rule", 140); _blockedList.Columns.Add("Since", 100);
         foreach (var g in new[] { "10 Min", "30 Min", "1 Hour", "3 Hours" }) _grace.Items.Add(g);
         _grace.SelectedIndex = 0;
         Ui.Tip.SetToolTip(_grace, "How long to leave the program alone after you unblock it.");
         var one = Ui.Btn(Ui.Unlock, "Unblock", "Unblock the selected programs.\nBlocks never expire by themselves; you decide.", () => OverrideSelected(all: false), BtnKind.Success);
         var all = Ui.Btn(Ui.Unlock, "Unblock All", "Unblock everything that is blocked.", () => OverrideSelected(all: true));
-        one.AutoSize = all.AutoSize = false; one.Width = all.Width = 172; one.Margin = all.Margin = new Padding(0, 0, 0, 10);
-        var side = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 188, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(Ui.Gap, 0, 0, 0) };
+        one.AutoSize = all.AutoSize = false; one.Width = 140; all.Width = 150; one.Margin = all.Margin = new Padding(0, 0, 8, 0); _grace.Margin = new Padding(0, 2, 8, 0);
+        var side = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 8, 0, 0) };
         side.Controls.Add(_grace); side.Controls.Add(one); side.Controls.Add(all);
-        _blockedCard.Body.Controls.Add(_blockedList); _blockedCard.Body.Controls.Add(side);
-        _blockedCard.SetHint("Stopped by the watchdog because they downloaded too fast on the backup.");
+        _blockedSide = side;
+        _blockedCard.Body.Controls.Add(_blockedList); _blockedCard.Body.Controls.Add(_blockedEmpty); _blockedCard.Body.Controls.Add(side);
+        ShowBlockedList(0);
+        _blockedCard.SetHint("Programs the watchdog stopped because they downloaded too fast on a protected connection. Blocks never expire by themselves: you decide.");
 
         // allowed-for-now card (countdown)
         Ui.StyleList(_allowedList);
@@ -204,33 +225,38 @@ sealed class MainForm : Form
         // latency chart
         var chartCard = _chartCard = new Card(Ui.Chart, "Latency");
         chartCard.SetHint("Last ~10 minutes. Red ticks mark failed probes.");
+        chartCard.AddHeaderControl(_legend);
         _chart.BackColor = Ui.CardBg; _chart.ForeColor = Ui.Muted; _chart.Font = Ui.UiFont(8.5f);
         chartCard.Body.Padding = new Padding(Ui.Gap, 0, Ui.Pad, Ui.Gap); chartCard.Body.Controls.Add(_chart);
 
-        // bottom row: session tiles + backup data (two sibling cards)
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38)); bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
+        // Session is a narrow card as high as the two cards beside it; Network Activity is above Blocked (which is always there)
         var statsCard = new Card(Ui.Swap, "Session");
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = Ui.CardBg };
-        for (int i = 0; i < 4; i++) tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
-        tiles.Controls.Add(Tile(Ui.Swap, _stSwitches, "Switches"), 0, 0);
-        tiles.Controls.Add(Tile(Ui.Clock, _stOnBackup, "On Backup"), 0, 1);
-        tiles.Controls.Add(Tile(Ui.Check, _stLast, "Last Switch"), 0, 2);
-        tiles.Controls.Add(Tile(Ui.Download, _stData, "Backup Data Today"), 0, 3);
-        statsCard.Body.Controls.Add(tiles);
+        _sessionTiles = new[] { Tile(Ui.Swap, _stSwitches, "Switches"), Tile(Ui.Clock, _stOnBackup, "On Backup"), Tile(Ui.Check, _stLast, "Last Switch"), Tile(Ui.Download, _stData, "Backup Data Today") };
+        statsCard.Body.Controls.Add(_tilesGrid);
+        _stData.Font = Ui.UiFont(12.5f, bold: true);       // "1.33 GB / 10 GB" is longer than the other numbers
+        LayoutTiles();
+        _bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25)); _bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 75));
+        _bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); _bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, BlockedRowHeight));
 
-        var usageCard = new Card(Ui.Download, "Backup Data");
-        usageCard.SetHint("Data received on the backup today (kept across restarts, starts again at midnight).\nPeak = a program's fastest 10 seconds. Set a rule's trigger between a program's idle value and its download peak.");
-        Ui.StyleList(_usage);
-        _usage.Columns.Add("Program", 190); _usage.Columns.Add("Total", 100, HorizontalAlignment.Right); _usage.Columns.Add("Peak 10 s", 100, HorizontalAlignment.Right); _usage.Columns.Add("Watch List", 100);
+        var usageCard = new Card(Ui.Download, "Network Activity");
+        usageCard.SetHint("Total = what each program downloaded plus uploaded today, on the main connection and the backup (kept across restarts, starts again at midnight). Hover a row for the split. Click a column header, or its small button, to sort; click again to reverse.\nOn Backup = how much of that went through your backup (your phone's data).\nTrigger = the most it downloaded in any 10 seconds today. It is measured the same way as your watch trigger (set in Settings): amber means it went above it, so a watched program like this is blocked on the backup. Set a rule's trigger between a program's quiet value and its download value.");
+        Ui.StyleList(_usage, UsageSortState);
+        _usage.ColumnClick += (_, e) => SortByColumn(e.Column);
+        _usage.ShowItemToolTips = true;
+        _usage.Columns.Add("Program", 196); _usage.Columns.Add("Total", 100, HorizontalAlignment.Right); _usage.Columns.Add("On Backup", 140, HorizontalAlignment.Right);
+        _usage.Columns.Add("Trigger", 100, HorizontalAlignment.Right); _usage.Columns.Add("Watch List", 100);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, BackColor = Ui.CardBg, Padding = new Padding(0, Ui.Gap, 0, 0) };
         actions.Controls.Add(Ui.Btn(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary));
         actions.Controls.Add(Ui.Btn(Ui.Refresh, "Reset", "Reset the counters.", () => { _engine.Usage.Reset(); RefreshUsage(); }));
         usageCard.Body.Controls.Add(_usage); usageCard.Body.Controls.Add(actions);
-        bottom.Controls.Add(statsCard, 0, 0); bottom.Controls.Add(usageCard, 1, 0);
 
-        grid.Controls.Add(top, 0, 0); grid.Controls.Add(cards, 0, 1); grid.Controls.Add(_blockedCard, 0, 2); grid.Controls.Add(_allowedCard, 0, 3);
-        grid.Controls.Add(chartCard, 0, 4); grid.Controls.Add(bottom, 0, 5);
+        var fixBtn = Ui.Btn(Ui.Settings, "Choose Connections", "Sort your networks, or pick the adapters.", () => ChooseConnections());
+        fixBtn.Dock = DockStyle.Right; fixBtn.Margin = new Padding(0);
+        _warnBar.Controls.Add(_warnText); _warnBar.Controls.Add(fixBtn);      // docked: the button first (right), then the text fills the rest
+        grid.Controls.Add(top, 0, 0); grid.Controls.Add(_warnBar, 0, 1); grid.Controls.Add(cards, 0, 2); grid.Controls.Add(chartCard, 0, 3);
+        _bottom.Controls.Add(statsCard, 0, 0); _bottom.SetRowSpan(statsCard, 2);
+        _bottom.Controls.Add(usageCard, 1, 0); _bottom.Controls.Add(_blockedCard, 1, 1);
+        grid.Controls.Add(_allowedCard, 0, 4); grid.Controls.Add(_bottom, 0, 5);
         page.Controls.Add(grid);
         return page;
     }
@@ -238,9 +264,8 @@ sealed class MainForm : Form
     /// <summary>The adapters changed (a phone was plugged in, an adapter was renamed or you chose others): card titles and icons follow.</summary>
     void OnAdaptersChanged()
     {
-        _cardP.SetTitle(_primary); _cardP.SetIcon(Ui.AdapterGlyph(_engine.PrimaryKind));
-        _cardB.SetTitle(_backup); _cardB.SetIcon(Ui.AdapterGlyph(_engine.BackupKind));
-        _cardP.SetBadge(_engine.PrimaryNetwork ?? ""); _cardB.SetBadge(_engine.BackupNetwork ?? "");
+        _cardP.SetIcon(Ui.AdapterGlyph(_engine.PrimaryKind)); _cardB.SetIcon(Ui.AdapterGlyph(_engine.BackupKind));
+        _cardP.SetIdentity(_engine.PrimaryNetwork ?? "", _primary); _cardB.SetIdentity(_engine.BackupNetwork ?? "", _backup);
         _modeBtn.Text = Ui.T(ModeLabel(_engine.ConnMode));
     }
 
@@ -251,7 +276,7 @@ sealed class MainForm : Form
         dlg.ShowDialog(this);
     }
 
-    string ModeLabel(ConnectionMode m) => m switch { ConnectionMode.StayPrimary => $"Stay On {_primary}", ConnectionMode.StayBackup => $"Stay On {_backup}", _ => "Automatic" };
+    string ModeLabel(ConnectionMode m) => m switch { ConnectionMode.StayPrimary => $"Stay On {Ui.Role("Main", _engine.PrimaryNetwork, _primary)}", ConnectionMode.StayBackup => $"Stay On {Ui.Role("Backup", _engine.BackupNetwork, _backup)}", _ => "Automatic" };
 
     /// <summary>Automatic, or locked to one connection (no automatic switching at all).</summary>
     ContextMenuStrip ModeMenu()
@@ -270,6 +295,32 @@ sealed class MainForm : Form
         return m;
     }
 
+    /// <summary>Session tiles: one above the other, at a fixed height each (the card is tall, the tiles stay together at the top).</summary>
+    void LayoutTiles()
+    {
+        _tilesGrid.SuspendLayout();
+        _tilesGrid.Controls.Clear(); _tilesGrid.ColumnStyles.Clear(); _tilesGrid.RowStyles.Clear();
+        _tilesGrid.ColumnCount = 1; _tilesGrid.RowCount = _sessionTiles.Length + 1;
+        _tilesGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < _sessionTiles.Length; i++) { _tilesGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 64)); _tilesGrid.Controls.Add(_sessionTiles[i], 0, i); }
+        _tilesGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _tilesGrid.ResumeLayout();
+    }
+
+    /// <summary>The least height the dashboard needs. The Allowed card adds to it, so the chart and the tables keep their room (the page scrolls instead).</summary>
+    void FitDashboardHeight()
+    {
+        if (_dashPage is null) return;
+        _dashPage.AutoScrollMinSize = new Size(0, DashboardMinHeight + (_allowedShown ? AllowedRowHeight : 0));
+    }
+
+    /// <summary>Blocked is always on the dashboard: the list while something is blocked, a short note (and idle buttons) while nothing is.</summary>
+    void ShowBlockedList(int count)
+    {
+        _blockedList.Visible = count > 0; _blockedEmpty.Visible = count == 0;
+        if (_blockedSide is not null) _blockedSide.Enabled = count > 0;
+    }
+
     /// <summary>Icon + big number + caption.</summary>
     static Control Tile(string glyph, Label value, string caption)
     {
@@ -284,26 +335,54 @@ sealed class MainForm : Form
     /// <summary>Shows a status right away (used after a theme change, so the new window is not blank until the next probe).</summary>
     public void ShowStatus(EngineStatus s) => Apply(s);
 
-    static string WithNet(string adapter, string? net) => string.IsNullOrEmpty(net) ? adapter : $"{adapter}  ·  {net}";
+    /// <summary>The banner under the status row: shown while the main connection is protected like a backup, or both connections are one network.
+    /// Red when it is (probably) your phone, amber when it is only "not sorted yet" or "not identified yet".</summary>
+    void UpdateWarning()
+    {
+        string net = _engine.PrimaryNetwork ?? "";
+        string? text = null; bool red = true;
+        if (_engine.Paused) { }
+        else if (_engine.SameNetworkWarning) text = $"Both connections are on the same network{(net.Length > 0 ? $" ({net})" : "")}. No backup if it fails.";
+        else if (_engine.MainProtected)
+        {
+            if (net.Length == 0) { text = "Windows is still identifying the main connection. Protected like a backup until then."; red = false; }
+            else if (_engine.RoleOf(net) is NetworkRole.Backup or NetworkRole.Barred) text = $"Main connection is on {net}, a backup network. Mobile data may be in use.";
+            else { text = $"Main connection is on {net}, which is not sorted yet. Treated as a backup."; red = false; }
+        }
+        SetWarning(text, red);
+    }
+
+    void SetWarning(string? text, bool red)
+    {
+        _warnText.Text = text ?? ""; _warnBar.BackColor = red ? Ui.RedFill : Ui.AmberFill; _warnBar.Visible = text is not null;
+        _grid.RowStyles[1].Height = text is null ? 0 : 48;
+        _grid.RowStyles[3].Height = text is null ? ChartPct : ChartPct - 5; _grid.RowStyles[5].Height = text is null ? BottomPct : BottomPct + 5;      // the banner takes its height from the chart, so the table does not get squeezed
+    }
+
+    /// <summary>The label at the top: "On Main: SNcial_5G" (the adapter name when the network name is not known).</summary>
+    static string OnLabel(string role, string? net, string adapter) => $"On {role}: {(string.IsNullOrEmpty(net) ? adapter : net)}";
 
     void Apply(EngineStatus s)
     {
-        _cardP.SetBadge(_engine.PrimaryNetwork ?? ""); _cardB.SetBadge(_engine.BackupNetwork ?? "");   // names are refreshed by the engine in the background
+        _cardP.SetIdentity(_engine.PrimaryNetwork ?? "", _primary); _cardB.SetIdentity(_engine.BackupNetwork ?? "", _backup);   // names are refreshed by the engine in the background
         bool anyOk = s.Primary.Healthy || s.Backup.Healthy;
         if (s.Paused) { _banner.Text = "Paused"; _banner.ForeColor = Ui.Muted; _bannerIcon.Image = G(Ui.Pause, Ui.Muted); }
         else if (!anyOk) { _banner.Text = "No Connection"; _banner.ForeColor = Ui.Red; _bannerIcon.Image = G(Ui.Warning, Ui.Red); }
-        else if (s.Active == Active.Primary) { _banner.Text = WithNet(_primary, _engine.PrimaryNetwork); _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.PrimaryKind), Ui.Green); }
-        else { _banner.Text = WithNet(_backup, _engine.BackupNetwork) + "  ·  Backup"; _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.BackupKind), Ui.Amber); }
+        else if (s.Active == Active.Primary) { _banner.Text = OnLabel("Main", _engine.PrimaryNetwork, _primary); _banner.ForeColor = Ui.Green; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.PrimaryKind), Ui.Green); }
+        else { _banner.Text = OnLabel("Backup", _engine.BackupNetwork, _backup); _banner.ForeColor = Ui.Amber; _bannerIcon.Image = G(Ui.AdapterGlyph(_engine.BackupKind), Ui.Amber); }
         UpdatePauseButton();
         _vpnBadge.Visible = s.Degraded;
+        _sameBadge.Visible = _engine.SameNetworkWarning;
+        _phoneMainBadge.Visible = _engine.MainProtected && !_engine.SameNetworkWarning;
+        UpdateWarning();
         _lockBadge.Visible = s.Mode != ConnectionMode.Auto; _modeBtn.Text = Ui.T(ModeLabel(s.Mode));
 
         var st = _engine.Stats;
         Color? inUse = s.Paused || !anyOk ? null : s.Active == Active.Primary ? Ui.Green : Ui.Amber;
-        _cardP.Show(s.Primary, StatsTracker.UptimePct(st.ProbesPrimary, st.FailPrimary), st.AvgMs(true), s.Active == Active.Primary ? inUse : null);
-        _cardB.Show(s.Backup, StatsTracker.UptimePct(st.ProbesBackup, st.FailBackup), st.AvgMs(false), s.Active == Active.Backup ? inUse : null);
+        _cardP.Show(s.Primary, StatsTracker.UptimePct(st.ProbesPrimary, st.FailPrimary), st.AvgMs(true), s.Active == Active.Primary ? inUse : null, selected: !s.Paused && s.Active == Active.Primary);
+        _cardB.Show(s.Backup, StatsTracker.UptimePct(st.ProbesBackup, st.FailBackup), st.AvgMs(false), s.Active == Active.Backup ? inUse : null, selected: !s.Paused && s.Active == Active.Backup);
         var (p, b) = st.Snapshot();
-        _chart.SetData(p, b, _primary, _backup);
+        _chart.SetData(p, b); _legend.Set(_primary, _backup);
         if (_awaitStatus) SetLoading(false);       // the first measurement after a change has arrived
 
         var onBackup = TimeSpan.FromSeconds(st.SecondsOnBackup);
@@ -311,9 +390,9 @@ sealed class MainForm : Form
         _stOnBackup.Text = onBackup.TotalHours >= 1 ? $"{(int)onBackup.TotalHours} h {onBackup.Minutes} min" : $"{(int)onBackup.TotalMinutes} min";
         _stLast.Text = st.LastSwitchAt is DateTime t ? t.ToString("HH:mm") : "None";
         long today = _engine.BackupBytesToday; long capMb = _engine.DailyCapMB;
-        _stData.Text = capMb > 0 ? $"{Fmt(today)} of {capMb} MB" : Fmt(today);
+        _stData.Text = capMb > 0 ? $"{Fmt(today)} / {(capMb >= 1000 ? $"{capMb / 1000.0:0.#} GB" : $"{capMb} MB")}" : Fmt(today);
         _stData.ForeColor = capMb > 0 && DataBudget.LevelFor(today, capMb * 1_000_000L) == BudgetLevel.Reached ? Ui.Red : capMb > 0 && DataBudget.LevelFor(today, capMb * 1_000_000L) == BudgetLevel.Warning ? Ui.Amber : Ui.Text;
-        Ui.Tip.SetToolTip(_stData, "Everything that went through the backup connection today (all programs). The count starts again at midnight." + (capMb > 0 ? $" Your daily limit is {capMb} MB." : " Set a daily limit in Settings."));
+        Ui.Tip.SetToolTip(_stData, "Everything that went through the backup connection today (all programs). The count starts again at midnight." + (_engine.MainProtected ? $" The main connection counts too while it is protected ({_engine.MainProtectedReason})." : "") + (capMb > 0 ? $" Your daily limit is {capMb} MB." : " Set a daily limit in Settings."));
         Ui.Tip.SetToolTip(_stLast, st.LastSwitchAt is null ? "No switch yet." : st.LastSwitchReason);
     }
 
@@ -342,7 +421,7 @@ sealed class MainForm : Form
         }
         _blockedList.EndUpdate();
         _blockedCard.SetTitle(list.Count > 0 ? $"Blocked ({list.Count})" : "Blocked");
-        _grid.RowStyles[2].Height = list.Count > 0 ? 190 : 0;   // the card only takes space while something is blocked
+        ShowBlockedList(list.Count);
     }
 
     void AllowedAction(bool block)
@@ -364,29 +443,52 @@ sealed class MainForm : Form
             _allowedList.Items.Add(new ListViewItem(new[] { a.Path, a.Rule, t }) { Tag = a.DisplayName, Selected = selected.Contains(a.DisplayName) });
         }
         _allowedList.EndUpdate();
-        _grid.RowStyles[3].Height = list.Count > 0 ? 190 : 0;   // only takes space while something is allowed
+        _grid.RowStyles[4].Height = list.Count > 0 ? AllowedRowHeight : 0;   // only takes space while something is allowed
+        if (_allowedShown != list.Count > 0) { _allowedShown = list.Count > 0; FitDashboardHeight(); }
+    }
+
+    /// <summary>What the sort button at the end of a Network Activity column header shows: 0 idle, 1 ascending, 2 descending.</summary>
+    int UsageSortState(int column)
+    {
+        if (column < 0 || column >= UsageKeys.Length) return -1;
+        if (_sortKey != UsageKeys[column]) return 0;
+        bool desc = _sortKey != "program"; if (_sortFlip) desc = !desc;
+        return desc ? 2 : 1;
+    }
+
+    /// <summary>A click on a column header presses its sort button: a new column sorts by it, the same column again flips ascending and descending.</summary>
+    void SortByColumn(int column)
+    {
+        if (column < 0 || column >= UsageKeys.Length) return;
+        if (_sortKey == UsageKeys[column]) _sortFlip = !_sortFlip; else { _sortKey = UsageKeys[column]; _sortFlip = false; }
+        Ui.RedrawHeader(_usage);
+        RefreshUsage();
     }
 
     void RefreshUsage()
     {
         RefreshBlocked(); RefreshAllowed();
-        var top = _engine.Usage.TopWithPeak(10);
+        var top = UsageSort.Apply(_engine.Usage.Rows(200), _sortKey, _sortFlip, r => _engine.IsWatched(_engine.Usage.PathFor(r.Name) ?? r.Name));
+        long triggerBytes = (long)(_engine.TriggerMb * 1_000_000);
         // this table is rebuilt every 2 s, so remember what is selected (by program name) and select it again
         var selected = _usage.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _usage.BeginUpdate(); _usage.Items.Clear();
-        foreach (var (name, bytes, peak) in top)
+        foreach (var r in top)
         {
-            string path = _engine.Usage.PathFor(name) ?? name;
+            string path = _engine.Usage.PathFor(r.Name) ?? r.Name;
             bool watched = _engine.IsWatched(path);
-            var item = new ListViewItem(new[] { name, Fmt(bytes), $"{peak / 1e6:0.0} MB", watched ? "Watched" : "" })
-            { Tag = name, Selected = selected.Contains(name), UseItemStyleForSubItems = false };
-            item.SubItems[3].ForeColor = Ui.Green;
+            var item = new ListViewItem(new[] { r.Name, Fmt(r.Total), r.BackupBytes > 0 ? Fmt(r.BackupBytes) : "", $"{r.PeakDown / 1e6:0.0} MB", watched ? "Watched" : "" })
+            { Tag = r.Name, Selected = selected.Contains(r.Name), UseItemStyleForSubItems = false,
+              ToolTipText = $"{r.Name}\nDown {Fmt(r.Down)}  \u00b7  Up {Fmt(r.Up)}" + (r.On.Length > 0 ? $"\nSeen on: {r.On}" : "") };
+            item.SubItems[2].ForeColor = Ui.Amber;                                                 // data that went through your phone stands out
+            item.SubItems[3].ForeColor = r.PeakDown >= triggerBytes ? Ui.Amber : Ui.Text;           // above the watch trigger: this is what would get a watched program blocked
+            item.SubItems[4].ForeColor = Ui.Green;
             _usage.Items.Add(item);
         }
         _usage.EndUpdate();
     }
 
-    /// <summary>One click from the "Backup Data" table: the selected programs become a watch rule, saved and applied at once.</summary>
+    /// <summary>One click from the "Network Activity" table: the selected programs become a watch rule, saved and applied at once.</summary>
     void AddWatchFromUsage()
     {
         var paths = _usage.SelectedItems.Cast<ListViewItem>().Select(i => _engine.Usage.PathFor((string)i.Tag!)).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).ToList();
@@ -732,8 +834,9 @@ sealed class MainForm : Form
     {
         Directory.CreateDirectory(folder);
         // sample rows so the Backup Data table can be checked (this dry-run copy only; nothing real is touched)
-        _engine.Usage.Add(@"C:\Program Files (x86)\Steam\steam.exe", 52_500_000); _engine.Usage.Add(@"C:\Program Files\HoYoPlay\1.19.0.382\HYPWorker.exe", 3_200_000);
-        _engine.Usage.Add(@"D:\Tools\newtool.exe", 800_000); _engine.Usage.Add(@"C:\Program Files\Mozilla Firefox\firefox.exe", 400_000);
+        _engine.Usage.Add(@"C:\Program Files (x86)\Steam\steam.exe", 52_500_000, DateTime.UtcNow, "Backup"); _engine.Usage.Add(@"C:\Program Files\HoYoPlay\1.19.0.382\HYPWorker.exe", 3_200_000, DateTime.UtcNow, "Main");
+        _engine.Usage.Add(@"D:\Tools\newtool.exe", 800_000, DateTime.UtcNow, "Backup"); _engine.Usage.Add(@"C:\Program Files\Mozilla Firefox\firefox.exe", 400_000, DateTime.UtcNow, "Main");
+        _engine.Usage.AddUp(@"C:\Program Files\Mozilla Firefox\firefox.exe", 1_900_000, "Main"); _engine.Usage.AddUp(@"C:\Program Files (x86)\Steam\steam.exe", 2_400_000, "Backup");
         RefreshUsage(); if (_usage.Items.Count > 1) { _usage.Items[1].Selected = true; _usage.Items[2].Selected = true; }
         foreach (var key in _tabs.Keys())
         {
@@ -748,6 +851,15 @@ sealed class MainForm : Form
         _tabs.Select("dashboard"); SetLoading(true); Application.DoEvents();
         using (var lb = new Bitmap(Width, Height)) { DrawToBitmap(lb, new Rectangle(0, 0, Width, Height)); lb.Save(Path.Combine(folder, "loading.png")); }
         SetLoading(false);
+        // the Blocked card beside Session (a sample row; this snapshot only)
+        _blockedList.Items.Clear(); _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files (x86)\Steam\steam.exe", "Steam", "3 min" })); _blockedCard.SetTitle("Blocked (1)");
+        ShowBlockedList(1); Application.DoEvents();
+        using (var bb0 = new Bitmap(Width, Height)) { DrawToBitmap(bb0, new Rectangle(0, 0, Width, Height)); bb0.Save(Path.Combine(folder, "blocked.png")); }
+        _blockedList.Items.Clear(); ShowBlockedList(0);
+        // the warning banner, with sample text (this snapshot only; the real one follows the engine)
+        SetWarning("Main connection is on SNcial, a backup network. Mobile data may be in use.", red: true); Application.DoEvents();
+        using (var wb0 = new Bitmap(Width, Height)) { DrawToBitmap(wb0, new Rectangle(0, 0, Width, Height)); wb0.Save(Path.Combine(folder, "warning.png")); }
+        SetWarning(null, red: true);
         // the program picker, rendered off-screen (never shown) with sample "seen on the backup" data
         using var pk = new ProgramPicker(new[] { new SeenProgram("steam.exe", @"C:\Program Files (x86)\Steam\steam.exe", 52_500_000), new SeenProgram("HYPWorker.exe", @"C:\Program Files\HoYoPlay\1.19.0.382\HYPWorker.exe", 3_200_000) });
         pk.StartPosition = FormStartPosition.Manual; pk.Location = new Point(-32000, -32000); pk.Opacity = 0;   // invisible and off-screen: nothing flashes on the user's desktop

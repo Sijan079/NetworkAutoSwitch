@@ -25,7 +25,7 @@ sealed class PolicyEditor : UserControl
 
     readonly ListBox _list = new() { Dock = DockStyle.Fill, IntegralHeight = false, BorderStyle = BorderStyle.None, BackColor = Ui.CardBg, Font = Ui.UiFont(10f), ItemHeight = 34, DrawMode = DrawMode.OwnerDrawFixed };
     readonly TextBox _name = new(), _exes = new() { Multiline = true, Height = 84, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true },
-                     _folder = new(), _path = new();
+                     _folder = new() { Multiline = true, Height = 60, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true }, _path = new();
     readonly NoWheelComboBox _action = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 1, Width = 84 },
                             _win = new() { Minimum = 1, Maximum = 600, Width = 68 },
@@ -46,10 +46,10 @@ sealed class PolicyEditor : UserControl
     /// Programs already covered by a rule are skipped and reported.</summary>
     public int AddPrograms(IEnumerable<string> paths)
     {
-        var current = _rows.Select(r => new AppRule(r.Name, null, r.Action, Exes: r.Exes.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries), Folder: string.IsNullOrWhiteSpace(r.Folder) ? null : r.Folder)).ToList();
+        var current = _rows.Select(r => { var (f, fs) = PolicyBuilder.FromLines(r.Folder); return new AppRule(r.Name, null, r.Action, Exes: r.Exes.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries), Folder: f, Folders: fs); }).ToList();
         var (rule, skipped) = PolicyBuilder.WatchRuleFor(paths, current);
         if (rule is null) { _say?.Invoke(skipped.Count > 0 ? $"Already watched: {string.Join(", ", skipped)}" : "Nothing to add.", true); return 0; }
-        var row = new Row { Name = rule.Name, Action = "watch", Exes = string.Join("\r\n", rule.Exes!), Folder = rule.Folder ?? "" };
+        var row = new Row { Name = rule.Name, Action = "watch", Exes = string.Join("\r\n", rule.Exes!), Folder = PolicyBuilder.ToLines(rule) };
         _rows.Add(row); _list.Items.Add(row); _list.SelectedIndex = _rows.Count - 1;
         _say?.Invoke(skipped.Count > 0 ? $"Added {rule.Name}. Already watched: {string.Join(", ", skipped)}" : $"Added {rule.Name}.", false);
         return rule.Exes!.Length;
@@ -98,7 +98,7 @@ sealed class PolicyEditor : UserControl
         Ui.Tip.SetToolTip(_action, "Watch: blocked only while it downloads fast.\nAlways block: never allowed on the backup.\nLimit uploads: caps upload speed (cannot limit downloads).");
         _name.Dock = _folder.Dock = _path.Dock = _exes.Dock = _action.Dock = DockStyle.Fill;
         Ui.Tip.SetToolTip(_exes, "One file name per line, e.g. steam.exe.\nList launchers and downloaders, never the games, so a game is never cut off.");
-        Ui.Tip.SetToolTip(_folder, "Optional: only match programs inside this folder (useful when two launchers share a file name).");
+        Ui.Tip.SetToolTip(_folder, "Optional, one folder per line: only match programs inside these folders.\nA game bundle lists the launcher's folder and the game's folder here, so one rule watches both.");
         Ui.Tip.SetToolTip(_useGlobal, "Off = this rule gets its own trigger.");
 
         var browse = Ui.Btn(Ui.Add, "Choose Programs", "Pick programs from a list (or browse for a file).", Browse);
@@ -111,7 +111,7 @@ sealed class PolicyEditor : UserControl
         AddField("Type", _action, null);
         AddField("Programs", _exes, "watch");
         AddField("", browse, null);
-        AddField("Folder", _folder, "watch");
+        AddField("Folders", _folder, "watch");
         AddField("Path", _path, "block", "throttle");
         AddField("Trigger", _useGlobal, "watch");
         AddField("", trigger, "watch");
@@ -183,7 +183,7 @@ sealed class PolicyEditor : UserControl
             _rows.Add(new Row
             {
                 Name = r.Name, Action = r.Action.ToLowerInvariant(), Exes = string.Join("\r\n", r.Exes ?? Array.Empty<string>()),
-                Folder = r.Folder ?? "", Path = r.Path ?? "",
+                Folder = PolicyBuilder.ToLines(r), Path = r.Path ?? "",
                 // a rule is "custom" if it sets any of its own numbers; missing ones fall back to the global value
                 UseGlobal = p.UsesGlobal(r), Mb = (decimal)p.MbFor(r), WindowSec = p.WindowFor(r),
                 Kbps = r.Kbps > 0 ? r.Kbps : 500
@@ -242,7 +242,10 @@ sealed class PolicyEditor : UserControl
             var have = _exes.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
             foreach (var p in dlg.Selected) { var f = System.IO.Path.GetFileName(p); if (!have.Contains(f, StringComparer.OrdinalIgnoreCase)) have.Add(f); }
             _exes.Text = string.Join("\r\n", have);
-            if (string.IsNullOrWhiteSpace(_folder.Text)) _folder.Text = System.IO.Path.GetDirectoryName(dlg.Selected[0]) ?? "";
+            // keep every folder the picked programs live in (a launcher and its game): add the ones not covered yet
+            var dirs = _folder.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
+            foreach (var p in dlg.Selected) { var d = System.IO.Path.GetDirectoryName(p) ?? ""; if (d.Length > 0 && !dirs.Any(x => d.StartsWith(x, StringComparison.OrdinalIgnoreCase))) dirs.Add(d); }
+            _folder.Text = string.Join("\r\n", dirs);
         }
         else _path.Text = dlg.Selected[0];
     }
@@ -262,9 +265,10 @@ sealed class PolicyEditor : UserControl
                 case "watch":
                     var exes = r.Exes.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
                     if (exes.Length == 0) throw new InvalidDataException($"Rule '{n}': add at least one program.");
+                    var (folder, folders) = PolicyBuilder.FromLines(r.Folder);
                     rules.Add(new AppRule(n, null, "watch", Exes: exes,
                         MbPerWindow: r.UseGlobal ? null : (double)r.Mb, WindowSec: r.UseGlobal ? null : r.WindowSec,
-                        Folder: string.IsNullOrWhiteSpace(r.Folder) ? null : r.Folder.Trim()));
+                        Folder: folder, Folders: folders));
                     break;
                 case "block":
                     if (string.IsNullOrWhiteSpace(r.Path)) throw new InvalidDataException($"Rule '{n}': pick the program to block.");

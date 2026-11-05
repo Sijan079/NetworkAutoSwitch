@@ -6,10 +6,24 @@ namespace NetworkAutoSwitch.Core;
 // action "block"    -> always blocked on the backup adapter (needs Path)
 // action "throttle" -> upload-only QoS cap (needs Path + Kbps)
 // action "watch"    -> download watchdog: blocks the program only while it pulls > MbPerWindow in WindowSec (needs Exes)
+// A watch rule is limited to "folder" (one) or "folders" (several, for a game bundle: its launcher AND the game itself). No folder = the file name matches anywhere.
 // For "watch" rules, MbPerWindow / WindowSec are OPTIONAL: left out, the rule uses the global Defaults below.
 // A watch block never expires by itself; the user lifts it from the dashboard. (Old files with "cooldownSec" still load; it is ignored.)
 public record AppRule(string Name, string? Path, string Action, int Kbps = 0,
-                      string[]? Exes = null, double? MbPerWindow = null, int? WindowSec = null, string? Folder = null);
+                      string[]? Exes = null, double? MbPerWindow = null, int? WindowSec = null, string? Folder = null, string[]? Folders = null)
+{
+    /// <summary>Every folder the rule is limited to: "folder" plus "folders". Empty = the rule matches the file name anywhere.</summary>
+    public List<string> AllFolders() => (Folders ?? Array.Empty<string>()).Concat(Folder is null ? Array.Empty<string>() : new[] { Folder })
+        .Select(f => f.Trim()).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Does the program's location satisfy the rule? No folders = anywhere; otherwise it must be inside ANY of them.
+    /// A game bundle lists the launcher's folder and the game's folder in one rule.</summary>
+    public bool InFolder(string exePath)
+    {
+        var all = AllFolders();
+        return all.Count == 0 || all.Any(f => exePath.StartsWith(f, StringComparison.OrdinalIgnoreCase));
+    }
+}
 
 /// <summary>The global trigger shared by every watch rule that doesn't set its own.</summary>
 public record WatchDefaults(double MbPerWindow = 2, int WindowSec = 10);

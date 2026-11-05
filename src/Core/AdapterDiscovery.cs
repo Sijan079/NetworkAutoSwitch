@@ -5,7 +5,7 @@ namespace NetworkAutoSwitch.Core;
 
 public enum AdapterKind { WiFi, Ethernet, Tether, Virtual, Other }
 
-public record AdapterInfo(string Name, string Description, AdapterKind Kind, bool IsUp, bool HasGateway, string Ipv4);
+public record AdapterInfo(string Name, string Description, AdapterKind Kind, bool IsUp, bool HasGateway, string Ipv4, string Gateway = "");
 
 /// <summary>Finds the network adapters on this PC and decides which one is the main connection and which the backup,
 /// so nothing depends on the names "Wi-Fi" or "Ethernet 2". The deciding parts are pure functions (easy to test).</summary>
@@ -46,8 +46,8 @@ public static class AdapterDiscovery
             {
                 var props = nic.GetIPProperties();
                 string ip = props.UnicastAddresses.FirstOrDefault(u => u.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.Address.ToString() ?? "";
-                bool gw = props.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !g.Address.Equals(System.Net.IPAddress.Any));
-                result.Add(new AdapterInfo(nic.Name, nic.Description, Classify(nic.Description, nic.NetworkInterfaceType), nic.OperationalStatus == OperationalStatus.Up, gw, ip));
+                string gwIp = props.GatewayAddresses.Select(g => g.Address).FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !a.Equals(System.Net.IPAddress.Any))?.ToString() ?? "";
+                result.Add(new AdapterInfo(nic.Name, nic.Description, Classify(nic.Description, nic.NetworkInterfaceType), nic.OperationalStatus == OperationalStatus.Up, gwIp.Length > 0, ip, gwIp));
             }
             catch { /* an adapter that cannot be read right now: skip it */ }
         }

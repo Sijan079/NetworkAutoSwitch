@@ -101,6 +101,9 @@ static class Ui
     public static Icon AppIcon(Color _) => Logo.Icon();
 
     /// <summary>The icon that matches what an adapter is: Wi-Fi waves, a network plug, or a phone.</summary>
+    /// <summary>"Main: SNcial_5G", or "Main (Wi-Fi)" when the network name is not known.</summary>
+    public static string Role(string role, string? network, string adapter) => string.IsNullOrEmpty(network) ? $"{role} ({adapter})" : $"{role}: {network}";
+
     public static string AdapterGlyph(AdapterKind k) => k switch { AdapterKind.WiFi => Wifi, AdapterKind.Tether => Phone, _ => Ethernet };
 
     // ---- Title Case for every label (names such as HoYoPlay or Wi-Fi are left alone) ----
@@ -142,7 +145,9 @@ static class Ui
         return b;
     }
 
-    public static void StyleList(ListView lv)
+    /// <param name="sortState">null = a plain list. Otherwise every column header gets a small sort button at its end and can be clicked:
+    /// it returns -1 (this column cannot be sorted), 0 (not the sort column), 1 (ascending) or 2 (descending).</param>
+    public static void StyleList(ListView lv, Func<int, int>? sortState = null)
     {
         lv.View = View.Details; lv.FullRowSelect = true; lv.HeaderStyle = ColumnHeaderStyle.Nonclickable; lv.BorderStyle = BorderStyle.None;
         lv.BackColor = CardBg; lv.ForeColor = Text; lv.Dock = DockStyle.Fill; lv.GridLines = false; lv.Font = UiFont(9.5f);
@@ -155,8 +160,11 @@ static class Ui
             using (var back = new SolidBrush(CardBg)) e.Graphics.FillRectangle(back, e.Bounds);
             using (var line = new Pen(Border)) e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
             var align = e.Header?.TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left;
-            TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", UiFont(9f, bold: true), Rectangle.Inflate(e.Bounds, -8, 0), Muted,
+            int sort = sortState?.Invoke(e.ColumnIndex) ?? -1;
+            var textArea = Rectangle.Inflate(e.Bounds, -8, 0); if (sort >= 0) textArea.Width = Math.Max(0, textArea.Width - 26);      // room for the sort button at the end
+            TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", UiFont(9f, bold: true), textArea, Muted,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | align);
+            if (sort >= 0) DrawSortButton(e.Graphics, new Rectangle(e.Bounds.Right - 28, e.Bounds.Top + (e.Bounds.Height - 18) / 2, 20, 18), sort);
         };
         // rows are drawn here too (not by Windows): no hover effect, and a selected row keeps readable text in both themes
         lv.DrawItem += (_, _) => { };                      // all drawing happens per cell below
@@ -164,7 +172,35 @@ static class Ui
         // the last column stretches to the right edge, so there is no leftover (undrawn) strip in the header
         lv.Resize += (_, _) => FitLastColumn(lv);
         lv.HandleCreated += (_, _) => FitLastColumn(lv);
+        if (sortState is not null) lv.HeaderStyle = ColumnHeaderStyle.Clickable;      // a click on a header presses its sort button
     }
+
+    /// <summary>The small button at the end of a sortable column header: two small arrows when idle, one filled arrow (up = ascending, down = descending) when it is the sort column.</summary>
+    static void DrawSortButton(Graphics g, Rectangle r, int state)
+    {
+        var old = g.SmoothingMode; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        bool on = state > 0;
+        using (var fill = new SolidBrush(on ? BlueFill : CardBg)) g.FillRectangle(fill, r);
+        using (var edge = new Pen(on ? BlueFill : Border)) g.DrawRectangle(edge, r.X, r.Y, r.Width - 1, r.Height - 1);
+        using var glyph = new SolidBrush(on ? Color.White : Muted);
+        float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f;
+        void Tri(float y, bool up, float w, float h) => g.FillPolygon(glyph, up
+            ? new[] { new PointF(cx - w, y + h / 2), new PointF(cx + w, y + h / 2), new PointF(cx, y - h / 2) }
+            : new[] { new PointF(cx - w, y - h / 2), new PointF(cx + w, y - h / 2), new PointF(cx, y + h / 2) });
+        if (!on) { Tri(cy - 3.2f, true, 3f, 3.6f); Tri(cy + 3.2f, false, 3f, 3.6f); }
+        else Tri(cy, state == 1, 4f, 5f);
+        g.SmoothingMode = old;
+    }
+
+    /// <summary>Repaints the (self-drawn) column headers of a list, for example after the sort changed.</summary>
+    public static void RedrawHeader(ListView lv)
+    {
+        if (!lv.IsHandleCreated) return;
+        var hdr = SendMessage(lv.Handle, 0x101F /* LVM_GETHEADER */, IntPtr.Zero, IntPtr.Zero);
+        if (hdr != IntPtr.Zero) InvalidateRect(hdr, IntPtr.Zero, true);
+    }
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool InvalidateRect(IntPtr h, IntPtr rect, bool erase);
 
     public static Color SelectedRow => Dark ? Color.FromArgb(52, 72, 112) : Color.FromArgb(215, 227, 252);
 
@@ -386,18 +422,8 @@ class Card : Panel
         if (on) _skel.BringToFront();
     }
 
-    // ---- a small muted text at the right of the header (used for the network name) ----
-    Label? _badge;
-    public void SetBadge(string text)
-    {
-        if (_badge is null)
-        {
-            if (text.Length == 0) return;
-            _badge = new Label { AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9.5f), BackColor = Ui.CardBg, Padding = new Padding(0, 8, 8, 0) };
-            _right.Controls.Add(_badge);
-        }
-        _badge.Text = text; _badge.Visible = text.Length > 0;
-    }
+    /// <summary>Any control at the right of the header (the chart's legend).</summary>
+    public void AddHeaderControl(Control c) => _right.Controls.Add(c);
 
     public void AddHeaderButton(string glyph, string tip, Action click)
     {
@@ -426,21 +452,48 @@ class Card : Panel
     }
 }
 
-/// <summary>One adapter on the dashboard: big latency number, small average/uptime line. Border color marks the adapter in use.</summary>
+/// <summary>One connection on the dashboard. Left: network name, adapter, average ping, uptime. Right: the current ping, number on top and "ms" below it.
+/// The border color marks the connection in use.</summary>
 sealed class AdapterCard : Card
 {
-    readonly Label _big = new() { Dock = DockStyle.Top, Height = 52, Font = Ui.UiFont(26f, bold: true), TextAlign = ContentAlignment.MiddleLeft, BackColor = Ui.CardBg, Text = "..." };
-    readonly Label _small = new() { Dock = DockStyle.Top, Height = 26, ForeColor = Ui.Muted, Font = Ui.UiFont(10f), BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft };
+    /// <summary>Loading placeholders that match the layout: four lines on the left (the right side stays quiet).</summary>
+    public static readonly (float W, int H)[] Bars = { (0.45f, 18), (0.28f, 12), (0.40f, 12), (0.30f, 12) };
 
-    public AdapterCard(string glyph, string name) : base(glyph, name)
+    static Label Line(float size, bool bold, Color color, int height) => new() { Dock = DockStyle.Top, Height = height, AutoEllipsis = true, ForeColor = color, Font = Ui.UiFont(size, bold: bold), BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label _net = Line(12f, true, Ui.Text, 28), _adapter = Line(10f, false, Ui.Muted, 22), _avg = Line(10f, false, Ui.Muted, 22), _up = Line(10f, false, Ui.Muted, 22);
+    readonly Label _ms = new() { Dock = DockStyle.Top, Height = 54, Font = Ui.UiFont(28f, bold: true), TextAlign = ContentAlignment.BottomCenter, BackColor = Ui.CardBg, Text = "..." };
+    readonly Label _unit = new() { Dock = DockStyle.Top, Height = 26, Font = Ui.UiFont(11f), ForeColor = Ui.Muted, TextAlign = ContentAlignment.TopCenter, BackColor = Ui.CardBg };
+
+    public AdapterCard(string glyph, string title) : base(glyph, title)
     {
-        Body.Controls.Add(_small); Body.Controls.Add(_big);
+        var right = new Panel { Dock = DockStyle.Right, Width = 104, BackColor = Ui.CardBg };
+        right.Controls.Add(_unit); right.Controls.Add(_ms);                       // docked to the top: the last added is the first shown
+        var left = new Panel { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
+        left.Controls.Add(_up); left.Controls.Add(_avg); left.Controls.Add(_adapter); left.Controls.Add(_net);
+        Body.Controls.Add(left); Body.Controls.Add(right);
     }
 
-    public void Show(ProbeResult r, double uptimePct, int? avgMs, Color? inUse)
+    bool _known, _selected;
+
+    /// <summary>The network name and the adapter it is on.</summary>
+    public void SetIdentity(string network, string adapter)
     {
-        if (r.Healthy) { _big.Text = $"{r.Ms} ms"; _big.ForeColor = Ui.Green; _small.Text = $"Avg {(avgMs is int a ? a + " ms" : "-")}  ·  {uptimePct:0.#}% Up"; }
-        else { _big.Text = "Down"; _big.ForeColor = Ui.Red; _small.Text = r.Detail; }
+        _known = network.Length > 0;
+        _net.Text = _known ? network : "Unknown network";
+        _net.ForeColor = _known && _selected ? Ui.Text : Ui.Muted;
+        _adapter.Text = adapter;
+    }
+
+    /// <summary>Shows one measurement. <paramref name="selected"/> = this is the connection in use: its colors are shown in full.
+    /// The other card is muted (grey ping, grey name), so the one in use stands out even without looking at the border.</summary>
+    public void Show(ProbeResult r, double uptimePct, int? avgMs, Color? inUse, bool selected)
+    {
+        _selected = selected;
+        _net.ForeColor = _known && selected ? Ui.Text : Ui.Muted;
+        _avg.Text = $"Average ping  \u00b7  {(avgMs is int a ? a + " ms" : "-")}";
+        _up.Text = $"Uptime  \u00b7  {uptimePct:0.#}%";
+        if (r.Healthy) { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = r.Ms.ToString(); _ms.ForeColor = selected ? Ui.Green : Ui.Muted; _unit.Text = "ms"; Ui.Tip.SetToolTip(_ms, ""); }
+        else { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = "\u2014"; _ms.ForeColor = selected ? Ui.Red : Ui.Muted; _unit.Text = ""; Ui.Tip.SetToolTip(_ms, r.Detail); }   // a ping has no number when nothing answers: 0 would read as "perfect"
         BorderColor = inUse ?? Ui.Border;
     }
 }

@@ -9,7 +9,8 @@ How Network Auto Switch works, why it is built this way, and where to find thing
    ┌──────────────────────────────────────────────────────────────────────────┐
    │ SwitchEngine (Core)                                                      │
    │                                                                          │
-   │  AdapterDiscovery ─► which two adapters are main and backup              │
+   │  AdapterDiscovery ─► the adapters; BackupNetworks ─► which NETWORK is    │
+   │          │              main or backup (your tables), SameNetwork ─► guard   │
    │          │                                                               │
    │  AdapterProber ───► is there real internet through EACH adapter?         │
    │          │              (VpnFallback steps in when a VPN refuses this)   │
@@ -22,7 +23,7 @@ How Network Auto Switch works, why it is built this way, and where to find thing
    │  TcpMigrator ─────► on fail-back, reset backup connections so            │
    │                       downloads reconnect over the main connection       │
    └──────────────────────────────────────────────────────────────────────────┘
-        ▲ events (Status, AdaptersChanged, Busy, WatchdogBlocked, Log)
+        ▲ events (Status, AdaptersChanged, Busy, WatchdogBlocked, MainProtectionChanged, NetworkNeedsLabel, SameNetworkChanged, Log)
         │
    Tray (WinForms window + tray icon)        Cli (diagnostics and tests, no UI)
 ```
@@ -42,9 +43,15 @@ Data used on the backup is counted from the adapter's own byte counter (`DataBud
 **Metrics, not routes.** Preferring an adapter means giving it the lowest interface metric (5) and the other a high one (500), and setting the preferred adapter's default-route metric to 0 (a baked-in route metric once let the phone win by 5).
 After switching, the app asks Windows which adapter a new connection really takes (`Find-NetRoute`), and if it is the wrong one it pushes the other adapter much further back. The original values are saved to `state.json` first.
 
+**Roles belong to networks, not adapters.** An early version let you pick an adapter as "backup", and a PC with both adapters on the phone's hotspot used 6.9 GB of mobile data on what the app thought was the main connection. Now you sort **networks** (by name) into a Main and a Backup table (`NetworkTables`, `BackupNetworks`), in Blacklist or Whitelist mode, and the engine assigns the adapters from that.
+`BackupNetworks.RoleOf` turns the tables and the mode into one of five roles (main, backup, either, barred, unlabelled). Unlabelled counts as backup, on purpose: the wrong guess toward "backup" costs a blocked download, the wrong guess toward "main" costs data.
+A network that needs protection but is the main connection gets the backup's protections on **its** adapter (`BackupNetworks.ProtectedAdapters`): the firewall rules, the watchdog (ETW, for the IPs of every protected adapter), the block rules and the data counter. `SameNetwork` compares the router's address and its hardware (MAC) address, because two home routers can both be 192.168.1.1.
+Unknown names **fail closed**: an up adapter that Windows has not named yet is protected until it is (rechecked every 2 s). Only a lookup that returns no name for any adapter is treated as "feature unavailable" (logged once).
+The adapter choice (`PrimaryAdapter`, `BackupAdapter`) remains as the fallback for when the tables cannot decide.
+
 **Policy only on the backup.** Rules are Windows Firewall blocks and QoS policies scoped to the backup adapter, so they never affect the main connection. They are removed the moment the main connection returns, and removed again on exit. Blocks never expire by themselves; the user decides.
 
-**Know downloads without a driver.** Per-program bytes come from Windows' own kernel network events (ETW, `Microsoft-Windows-Kernel-Network`), so nothing has to be installed. `DownloadGuard` is pure logic (bytes in, decisions out) so it is tested without any network.
+**Know downloads without a driver.** Per-program bytes, down and up, come from Windows' own kernel network events (ETW, `Microsoft-Windows-Kernel-Network`), so nothing has to be installed. One session runs for the whole life of the app and feeds the Dashboard's Network Activity table for both the main connection and the backup; the watchdog only looks at downloads on the protected connections. `DownloadGuard` is pure logic (bytes in, decisions out) so it is tested without any network.
 
 **Move running downloads.** A download that began on the backup would keep using it. On fail-back, `TcpMigrator` resets (`SetTcpEntry` DELETE_TCB) the connections of watched programs, and of anything pulling more than 1 MB per 10 s, so the program reconnects over the main connection and resumes. Games and light traffic are left alone.
 
@@ -83,7 +90,9 @@ docs/                      these documents; docs/legacy holds the original proto
 |---|---|---|
 | `SwitchEngine.cs` | The loop: detect adapters → probe → decide → switch → policy → restore. Raises the events the UI listens to. | no |
 | `FailoverMonitor.cs` | The switching rules: when to leave, when to return. | **yes** |
-| `AdapterDiscovery.cs` | Lists adapters, classifies them (Wi-Fi, Ethernet, tether, virtual) and picks main and backup. | mostly |
+| `AdapterDiscovery.cs` | Lists adapters, classifies them (Wi-Fi, Ethernet, tether, virtual) and picks main and backup when the network tables cannot. | mostly |
+| `BackupNetworks.cs`, `NetworkTables.cs` | The two network tables and the mode: the role of a network, who is main, who is protected, whether to ask. | **yes** |
+| `SameNetwork.cs` | Are the two connections on the same router? (the hardware-address lookup is the only impure part) | mostly |
 | `AdapterProber.cs` | The per-adapter health check (pinned TCP). | no |
 | `VpnFallback.cs` | What to do when a VPN refuses the pinned check, and the fail-back backoff. | **yes** |
 | `MetricSwitcher.cs` | Builds the PowerShell commands that set metrics and routes, and restore them. | commands are pure |
@@ -91,7 +100,7 @@ docs/                      these documents; docs/legacy holds the original proto
 | `PolicyBuilder.cs` | Turns picked programs into a rule; says which programs a rule covers. | **yes** |
 | `DownloadGuard.cs` | The download watchdog and the ETW byte counter. | guard is **yes** |
 | `TcpMigrator.cs` | Lists and resets TCP connections (Windows API). | no |
-| `NetworkNames.cs` | Which Wi-Fi network each adapter is on (for example `SNcial_5G`). | parsing is **yes** |
+| `NetworkNames.cs` | Which Wi-Fi network each adapter is on (for example `SNcial_5G`), the Wi-Fi networks saved in Windows, and which names are only stand-ins (`Identifying...`). | parsing is **yes** |
 | `DataBudget.cs` | Today's data on the backup, the daily limit levels (80 %, reached), and `ProbeSchedule` (how often the idle backup is checked). | **yes** |
 | `Stats.cs`, `LogClassifier.cs` | Session statistics; what kind of log line this is (for coloring). | **yes** |
 | `AppSettings.cs`, `Paths.cs`, `AppInfo.cs` | Settings file, where files live, version and SemVer comparison. | mostly |
@@ -106,8 +115,9 @@ docs/                      these documents; docs/legacy holds the original proto
 | `MainForm.cs` | The window: Dashboard, Log, Policy and Settings pages. |
 | `Ui.cs` | The design system: theme palette, icons, buttons, cards, tabs, loading placeholders, the adapter card. |
 | `PolicyEditor.cs`, `GlobalTriggerCard.cs` | The rules editor and the global trigger card. |
-| `ProgramPicker.cs`, `ConnectionsDialog.cs`, `JsonDialog.cs` | Dialogs. |
-| `LatencyChart.cs`, `Logo.cs`, `NoWheel.cs`, `UiSelfTest.cs` | The chart, the app icon drawn in code, controls that ignore the mouse wheel, and a UI test helper. |
+| `ProgramPicker.cs`, `JsonDialog.cs` | Dialogs. |
+| `ConnectionsDialog.cs`, `NetworkRoleDialog.cs` | Choose Connections (mode, Main and Backup tables, unlabelled list, adapters under Advanced) and the ask-once prompt for a new network. |
+| `LatencyChart.cs` (the chart and its legend), `Logo.cs`, `NoWheel.cs`, `UiSelfTest.cs` | The chart, the app icon drawn in code, controls that ignore the mouse wheel, and a UI test helper. |
 
 Every color comes from the palette in `Ui.cs`, and the window is rebuilt when the theme changes. There are no nested cards: each card sits directly on its page.
 

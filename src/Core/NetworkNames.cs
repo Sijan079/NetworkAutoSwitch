@@ -21,11 +21,27 @@ public static class NetworkNames
                 int bar = line.IndexOf('|');
                 if (bar <= 0) continue;
                 string alias = line[..bar].Trim(), name = line[(bar + 1)..].Trim();
-                if (alias.Length > 0 && name.Length > 0) map[alias] = Clean(name, saved);
+                if (alias.Length > 0 && name.Length > 0 && !IsPlaceholder(name)) map[alias] = Clean(name, saved);
             }
         }
         catch { /* the names are a nicety: never let them break anything */ }
         return map;
+    }
+
+    /// <summary>Windows shows a stand-in name while it is still working out which network it joined ("Identifying...", "Unidentified network"). That is not a network:
+    /// it must never be shown, asked about or saved as a Main or Backup network. Any name that ends in "..." counts (so it works in every Windows language).</summary>
+    public static bool IsPlaceholder(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return true;
+        string n = name.Trim();
+        return n.EndsWith("...", StringComparison.Ordinal) || n.EndsWith("\u2026", StringComparison.Ordinal) || n.Equals("Unidentified network", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Wi-Fi networks saved in Windows (so they can be sorted before ever connecting). Never throws; empty when Windows cannot tell.</summary>
+    public static List<string> SavedWifi()
+    {
+        try { return ParseSavedProfiles(Run("netsh.exe", "wlan show profiles")).Distinct(StringComparer.OrdinalIgnoreCase).ToList(); }
+        catch { return new(); }
     }
 
     /// <summary>Windows adds a number to a profile name when a network was joined more than once ("SNcial 1684" for the network "SNcial").

@@ -9,19 +9,18 @@ namespace NetworkAutoSwitch.Tray;
 sealed class LatencyChart : Control
 {
     Sample[] _p = Array.Empty<Sample>(), _b = Array.Empty<Sample>();
-    string _pName = "Primary", _bName = "Backup";
-    static Color PCol => Ui.Dark ? Color.FromArgb(96, 165, 250) : Color.FromArgb(31, 119, 180);
-    static Color BCol => Ui.Dark ? Color.FromArgb(251, 146, 60) : Color.FromArgb(230, 126, 34);
+    internal static Color PCol => Ui.Dark ? Color.FromArgb(96, 165, 250) : Color.FromArgb(31, 119, 180);
+    internal static Color BCol => Ui.Dark ? Color.FromArgb(251, 146, 60) : Color.FromArgb(230, 126, 34);
 
     public LatencyChart() { DoubleBuffered = true; ResizeRedraw = true; }
 
-    public void SetData(Sample[] p, Sample[] b, string pName, string bName) { _p = p; _b = b; _pName = pName; _bName = bName; Invalidate(); }
+    public void SetData(Sample[] p, Sample[] b) { _p = p; _b = b; Invalidate(); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(BackColor);
-        var r = new Rectangle(46, 22, Width - 60, Height - 40);
+        var r = new Rectangle(46, 10, Width - 60, Height - 28);
         if (r.Width < 40 || r.Height < 30) return;
 
         const int window = 120;   // last ~10 minutes at one probe per 5 s
@@ -35,11 +34,6 @@ sealed class LatencyChart : Control
         }
         Draw(g, r, _p, PCol, yMax, window); Draw(g, r, _b, BCol, yMax, window);
 
-        // legend
-        using var pb = new SolidBrush(PCol); using var bb = new SolidBrush(BCol);
-        g.FillRectangle(pb, r.Left, 6, 10, 10); g.DrawString(_pName, Font, txt, r.Left + 14, 3);
-        int x2 = r.Left + 24 + (int)g.MeasureString(_pName, Font).Width + 12;
-        g.FillRectangle(bb, x2, 6, 10, 10); g.DrawString(_bName, Font, txt, x2 + 14, 3);
     }
 
     void Draw(Graphics g, Rectangle r, Sample[] data, Color col, int yMax, int window)
@@ -60,5 +54,35 @@ sealed class LatencyChart : Control
             }
             else { prev = null; g.DrawLine(fail, X(i), r.Bottom - 8, X(i), r.Bottom); }
         }
+    }
+}
+
+/// <summary>The two colored adapter names, shown in the header row of the Latency card (same row as its title).</summary>
+sealed class ChartLegend : Control
+{
+    string _p = "", _b = "";
+    public ChartLegend()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        Height = 32; Margin = new Padding(0, 0, 6, 0);
+    }
+
+    public void Set(string primary, string backup)
+    {
+        if (primary == _p && backup == _b) return;
+        _p = primary; _b = backup; Width = 10 + 6 + TextW(_p) + 18 + 10 + 6 + TextW(_b) + 4; Invalidate();
+    }
+
+    int TextW(string t) => TextRenderer.MeasureText(t, Font, new Size(int.MaxValue, 100), TextFormatFlags.NoPadding).Width;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.Clear(BackColor);
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left;
+        int x = 0, mid = Height / 2;
+        using (var pb = new SolidBrush(LatencyChart.PCol)) g.FillRectangle(pb, x, mid - 5, 10, 10);
+        x += 16; TextRenderer.DrawText(g, _p, Font, new Rectangle(x, 0, TextW(_p) + 2, Height), ForeColor, flags); x += TextW(_p) + 18;
+        using (var bb = new SolidBrush(LatencyChart.BCol)) g.FillRectangle(bb, x, mid - 5, 10, 10);
+        x += 16; TextRenderer.DrawText(g, _b, Font, new Rectangle(x, 0, TextW(_b) + 2, Height), ForeColor, flags);
     }
 }

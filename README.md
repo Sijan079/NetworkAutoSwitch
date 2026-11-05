@@ -19,6 +19,7 @@ Windows 10 and 11 (64-bit). It needs administrator rights, because it changes ne
 - [Install](#install)
 - [How it works, in short](#how-it-works-in-short)
 - [Using the app](#using-the-app)
+- [Which network is main, which is backup](#which-network-is-main-which-is-backup)
 - [Documentation](#documentation)
 - [Build from source](#build-from-source)
 - [Known limits](#known-limits)
@@ -50,18 +51,28 @@ The tray icon shows the state: **green** = on the main connection, **amber** = o
 
 | Page | What it is for |
 |---|---|
-| **Dashboard** | Live status, both connections (latency, uptime, and the Wi-Fi network each one is on), a latency chart, session numbers, and the data each program used on the backup (with one-click *Add To Watch List*). Panels for **Blocked** programs (Unblock) and **Allowed For Now** (Block Now / Watch Again) appear when needed. The **Mode** button chooses Automatic or stay on one connection; **Pause** puts Windows fully back to normal. |
+| **Dashboard** | Live status, both connections (network name, adapter, average ping and uptime on the left, the current ping on the right), a latency chart, session numbers, and **Network Activity**: what each program downloaded and uploaded, on the main connection and on the backup (with one-click *Add To Watch List*). Panels for **Blocked** programs (Unblock) and **Allowed For Now** (Block Now / Watch Again) appear when needed. The **Mode** button chooses Automatic or stay on one connection; **Pause** puts Windows fully back to normal. |
 | **Log** | Live, newest first, colored by type (switch, block, unblock, error, info). Select rows and press Ctrl+C to copy. |
 | **Policy** | The rules for the backup connection. *Add Rule* opens a program picker (programs that used backup data first, then running ones); you can also drag an `.exe` onto the page. *Edit As JSON* edits the same rules as text. |
 | **Settings** | Theme, how long the main connection must be good before switching back, mute notifications, **start when I sign in**, the **daily data limit** and check interval for the backup, the Global Trigger (how much a watched program may download before it is blocked), and **Check For Updates**. |
 
 **Exit** (tray menu) restores everything first. A VPN such as Cloudflare WARP is supported; the dashboard then shows a *VPN* badge (see [How it works](docs/ARCHITECTURE.md#vpns)).
 
+## Which network is main, which is backup
+
+Open **Mode, then Choose Connections** and sort your networks into a **Main** table and a **Backup** table (your phone's hotspot goes in Backup). The role belongs to the **network**, not to an adapter, so it holds whichever adapter that network is on, and swapping adapters by mistake does no harm.
+
+- **Mode** applies to both tables. *Blacklist*: a table lists the networks barred from that role (barred from main = always backup). *Whitelist*: a table lists the only networks that may have that role.
+- **Unlabelled** networks (on neither table) are asked about once, then treated as backup until you sort them. A backup network is protected even if it ends up as the main connection: heavy downloads on your watch list are blocked and its data counts toward your daily limit.
+- If both adapters end up on the same network, the dashboard shows **SAME NETWORK**: switching cannot keep you online, because both fail together.
+- If your **main** connection ends up on a backup network (for example your phone), a red banner appears on the dashboard and a tray pop-up tells you, **even if notifications are muted**.
+- The adapters themselves are under *Advanced* in that window. They only matter when the tables cannot decide.
+
 ## Documentation
 
 | Read this | When you want to |
 |---|---|
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Edit the policy file, choose adapters, find the settings, log and other files |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Edit the policy file, sort networks, find the settings, log and other files |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Understand the design and find your way around the source code |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Build, run the tests, use the diagnostic commands |
 | [docs/RELEASING.md](docs/RELEASING.md) | Version numbers, the installer, and how a release is made |
@@ -87,7 +98,8 @@ Running the tests and building the installer: [docs/DEVELOPMENT.md](docs/DEVELOP
 - Download **speed limits** are not possible with built-in Windows tools (only upload caps), so the watchdog blocks instead.
 - Connections that are not heavy and not on the watch list (for example a game session) stay on the backup until they reconnect on their own.
 - IPv4 only.
-- It manages **two** connections at a time. With three or more real adapters you choose which two in *Choose Connections*.
+- It manages **two** connections at a time. With three or more real adapters, the networks you sort decide which two (or choose the adapters under *Advanced* in *Choose Connections*).
+- Networks are matched **by name**. Two different networks with the same name are treated alike, which errs on the safe side (the protections apply). While Windows is still working out a network's name, it is ignored.
 - Behind a **full-tunnel VPN** the app cannot confirm that the idle connection has internet before switching to it, only that its link and gateway are up. Excluding `8.8.8.8` and `9.9.9.9` from the VPN gives exact checks again ([how](docs/CONFIGURATION.md#if-something-goes-wrong)).
 
 ## Forking and contributing

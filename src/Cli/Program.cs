@@ -112,6 +112,36 @@ if (args.Contains("--engine-test"))
         Check("busy: the window is told while the engine changes the network (so it can show placeholders), and told when done", busyOn >= 1 && busyOff == busyOn);
     }
     else Console.WriteLine("SKIP  choice tests (this PC has fewer than two real adapters)");
+    // the main connection can be a backup network (the 6.9 GB case). Names and the router check are injected, so the result does not depend on this PC's Wi-Fi.
+    var realNow = AdapterDiscovery.Candidates(AdapterDiscovery.Detect());
+    if (testBackup is not null && realNow.Any(a => a.Name != testBackup))
+    {
+        string mainAd = testBackup, otherAd = realNow.First(a => a.Name != testBackup).Name;
+        async Task<List<string>> Scenario(Dictionary<string, string> names, Action<AppSettings>? tables)
+        {
+            string f = Path.Combine(Path.GetTempPath(), "nas-engine-prot-" + Guid.NewGuid().ToString("N") + ".json");
+            if (tables is not null) AppSettings.Update(tables, f);
+            var lines = new List<string>();
+            var e = new SwitchEngine(mainAd, otherAd, Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: f);
+            e.NameSource = () => names; e.SameNetworkCheck = (_, _, _, _, _) => false;
+            e.Log = l => { lock (lines) lines.Add(l); };
+            using var c = new CancellationTokenSource(); var r = e.RunAsync(0, c.Token);
+            await Task.Delay(5000);
+            c.Cancel(); try { await r; } catch { }
+            File.Delete(f);
+            lock (lines) return lines.ToList();
+        }
+        var protectedMain = await Scenario(new() { [mainAd] = "TestPhone", [otherAd] = "TestHome" }, s => s.BlacklistMainNetworks = new() { "TestPhone" });
+        Check("protected main: a main connection on a backup network is announced as protected", protectedMain.Any(l => l.Contains("PROTECTING the main connection") && l.Contains("labelled as backup")));
+        Check("protected main: the watchdog starts while the MAIN connection is in use", protectedMain.Any(l => l.Contains("would start download watchdog")));
+        var trustedMain = await Scenario(new() { [mainAd] = "TestHome", [otherAd] = "TestPhone" }, s => { s.BlacklistMainNetworks = new() { "TestPhone" }; s.BlacklistBackupNetworks = new() { "TestHome" }; });
+        Check("trusted main: a main network is NOT protected and no watchdog runs on it", !trustedMain.Any(l => l.Contains("PROTECTING")) && !trustedMain.Any(l => l.Contains("would start download watchdog")));
+        var unidentified = await Scenario(new() { [otherAd] = "TestHome" }, null);
+        Check("unidentified main: an adapter that is up but has no network name yet is protected (fail closed)", unidentified.Any(l => l.Contains("PROTECTING the main connection") && l.Contains("not identified")));
+        var noNames = await Scenario(new(), null);
+        Check("no names at all: the lookup is broken, so nothing is blocked, and it is said once", !noNames.Any(l => l.Contains("PROTECTING")) && noNames.Count(l => l.Contains("Windows gives no network names")) == 1);
+    }
+    else Console.WriteLine("SKIP  protected-main tests (no second adapter to pair with a healthy one)");
     File.Delete(tmp);
     Console.WriteLine(fails == 0 ? "ENGINE TEST PASSED" : $"{fails} FAILED");
     return fails;
@@ -408,7 +438,7 @@ static class SelfTest
         Check("add: one program makes a watch rule named after it, limited to its folder", one1.Rule is { Name: "EpicGamesLauncher", Action: "watch", Folder: @"D:\Games\Epic" } && one1.Rule.Exes!.SequenceEqual(new[] { "EpicGamesLauncher.exe" }));
         var many = PolicyBuilder.WatchRuleFor(new[] { @"D:\L\HYP.exe", @"D:\L\HYPWorker.exe", @"D:\L\HYP.exe" }, existing);
         Check("add: several programs from one folder become ONE rule (duplicates dropped)", many.Rule!.Exes!.Length == 2 && many.Rule.Folder == @"D:\L");
-        Check("add: programs from different folders get no folder filter", PolicyBuilder.WatchRuleFor(new[] { @"D:\a\x.exe", @"E:\b\y.exe" }, existing).Rule!.Folder is null);
+        Check("add: programs from different folders are kept as ONE rule limited to both folders (a launcher and its game)", PolicyBuilder.WatchRuleFor(new[] { @"D:\a\x.exe", @"E:\b\y.exe" }, existing).Rule is { Folder: null, Folders: [@"D:\a", @"E:\b"] });
         var dup = PolicyBuilder.WatchRuleFor(new[] { @"C:\Program Files (x86)\Steam\steam.exe" }, existing);
         Check("add: a program already watched is skipped, not duplicated", dup.Rule is null && dup.Skipped.SequenceEqual(new[] { "steam.exe" }));
         Check("add: same file name in ANOTHER launcher's folder is not treated as a duplicate", PolicyBuilder.WatchRuleFor(new[] { @"C:\Program Files\GRYPHLINK\launcher.exe" }, existing).Rule is not null);
@@ -461,6 +491,94 @@ static class SelfTest
         Check("suggest: virtual adapters (ZeroTier) are never chosen", !new[] { AdapterDiscovery.Suggest(thisPc).Primary, AdapterDiscovery.Suggest(thisPc).Backup }.Contains("ZeroTier One"));
         Check("suggest: a choice already in use is kept (the dongle stays main if it was main)", AdapterDiscovery.Suggest(thisPc, "Wi-Fi 2", "Ethernet 2").Primary == "Wi-Fi 2");
         Check("suggest: if the remembered adapter is gone, it falls back to detection", AdapterDiscovery.Suggest(thisPc.Where(a => a.Name != "Wi-Fi").ToList(), "Wi-Fi", "Ethernet 2").Primary == "Wi-Fi 2");
+        // guard: both connections on the SAME network (this PC once had both Wi-Fi adapters on one router, so a "switch" changed nothing)
+        Check("same network: same router address and same router hardware address = same network", SameNetwork.Judge("10.22.141.235", "AA-BB-CC-00-11-22", "10.22.141.235", "aa-bb-cc-00-11-22"));
+        Check("same network: different router addresses = different networks", !SameNetwork.Judge("192.168.1.1", "AA-BB-CC-00-11-22", "172.20.10.1", "AA-BB-CC-00-11-22"));
+        Check("same network: two DIFFERENT routers that both use 192.168.1.1 are NOT the same network", !SameNetwork.Judge("192.168.1.1", "AA-BB-CC-00-11-22", "192.168.1.1", "DD-EE-FF-33-44-55"));
+        Check("same network: the hardware address could not be read: the matching address alone counts as same", SameNetwork.Judge("10.0.0.1", "", "10.0.0.1", "AA-BB-CC-00-11-22"));
+        Check("same network: a connection with no gateway is never 'same'", !SameNetwork.Judge("", "", "", ""));
+        Check("same network: reading an unreachable router returns empty, never throws", SameNetwork.GatewayMac("not an ip", "also not") == "");
+        string[] noNets = Array.Empty<string>();
+        // backup networks: the label belongs to the network, so it protects whichever adapter that network ends up on
+        Check("backup nets: names match ignoring case and spaces; unknown never matches", BackupNetworks.Matches(new[] { "SNcial" }, " sncial ") && !BackupNetworks.Matches(new[] { "SNcial" }, "SNcial_5G") && !BackupNetworks.Matches(new[] { "SNcial" }, ""));
+        // mode + two tables. Blacklist: Main table = barred from main, Backup table = barred from backup. Whitelist: Main table = only these may be main, Backup table = only these may be backup.
+        Check("names: Windows' stand-in names ('Identifying...', 'Unidentified network') are not networks", NetworkNames.IsPlaceholder("Identifying...") && NetworkNames.IsPlaceholder("Identifizieren\u2026") && NetworkNames.IsPlaceholder("Unidentified network") && NetworkNames.IsPlaceholder("  ") && !NetworkNames.IsPlaceholder("SNcial") && !NetworkNames.IsPlaceholder("Cafe 2"));
+        Check("names: a saved stand-in name is dropped when the tables load", NetworkTables.From(new AppSettings { BlacklistMainNetworks = new() { "SNcial", "Identifying..." } }).BlacklistMain.SequenceEqual(new[] { "SNcial" }));
+        var BL = ListMode.Blacklist; var WL = ListMode.Whitelist;
+        Check("blacklist: barred from main = always backup, barred from backup = always main, not listed = unlabelled",
+            BackupNetworks.RoleOf("SNcial", BL, new[] { "SNcial" }, new[] { "SNcial_5G" }) == NetworkRole.Backup && BackupNetworks.RoleOf("SNcial_5G", BL, new[] { "SNcial" }, new[] { "SNcial_5G" }) == NetworkRole.Main
+            && BackupNetworks.RoleOf("Hotel", BL, new[] { "SNcial" }, new[] { "SNcial_5G" }) == NetworkRole.Unlabelled);
+        Check("blacklist: barred from BOTH roles = barred (not used, treated as backup)", BackupNetworks.RoleOf("X", BL, new[] { "X" }, new[] { "X" }) == NetworkRole.Barred);
+        Check("whitelist: only listed networks may be that role; on both tables = either; on neither = unlabelled",
+            BackupNetworks.RoleOf("SNcial_5G", WL, new[] { "SNcial_5G" }, new[] { "SNcial" }) == NetworkRole.Main && BackupNetworks.RoleOf("SNcial", WL, new[] { "SNcial_5G" }, new[] { "SNcial" }) == NetworkRole.Backup
+            && BackupNetworks.RoleOf("Phone", WL, new[] { "Phone" }, new[] { "Phone" }) == NetworkRole.Either && BackupNetworks.RoleOf("Hotel", WL, new[] { "SNcial_5G" }, new[] { "SNcial" }) == NetworkRole.Unlabelled);
+        Check("tables: saying 'this is Main / Backup' puts the network on the right table in EITHER mode (and takes it off the other)",
+            new[] { BL, WL }.All(md => { var (m1, b1) = BackupNetworks.WithRole("N", NetworkRole.Main, md, new[] { "N" }, new[] { "N" }); var (m2, b2) = BackupNetworks.WithRole("N", NetworkRole.Backup, md, noNets, noNets);
+                return BackupNetworks.RoleOf("N", md, m1, b1) == NetworkRole.Main && BackupNetworks.RoleOf("N", md, m2, b2) == NetworkRole.Backup; }));
+        Check("protect: unlabelled, backup and barred networks are protected when they are the main connection; main and either are not",
+            BackupNetworks.NeedsProtection(NetworkRole.Unlabelled) && BackupNetworks.NeedsProtection(NetworkRole.Backup) && BackupNetworks.NeedsProtection(NetworkRole.Barred) && !BackupNetworks.NeedsProtection(NetworkRole.Main) && !BackupNetworks.NeedsProtection(NetworkRole.Either));
+        Check("ask once: an unlabelled Wi-Fi or Ethernet network is asked about", BackupNetworks.ShouldAsk("Hotel", AdapterKind.WiFi, BL, noNets, noNets, noNets) && BackupNetworks.ShouldAsk("Office", AdapterKind.Ethernet, WL, noNets, noNets, noNets));
+        Check("ask once: not again after it was asked, not when it is on a table, not when the name is unknown", !BackupNetworks.ShouldAsk("Hotel", AdapterKind.WiFi, BL, noNets, noNets, new[] { "hotel" }) && !BackupNetworks.ShouldAsk("SNcial", AdapterKind.WiFi, BL, new[] { "SNcial" }, noNets, noNets) && !BackupNetworks.ShouldAsk("", AdapterKind.WiFi, BL, noNets, noNets, noNets));
+        Check("ask once: a phone/modem adapter is protected by kind, its generic name is never asked about", !BackupNetworks.ShouldAsk("Network 3", AdapterKind.Tether, BL, noNets, noNets, noNets));
+        Check("backup rule: a Main or barred network may never be the backup; backup, either and unlabelled may", !BackupNetworks.BackupAllowed(NetworkRole.Main) && !BackupNetworks.BackupAllowed(NetworkRole.Barred) && BackupNetworks.BackupAllowed(NetworkRole.Backup) && BackupNetworks.BackupAllowed(NetworkRole.Either) && BackupNetworks.BackupAllowed(NetworkRole.Unlabelled));
+        Check("same network: a hardware address that could not be read, with two DIFFERENT known names, is not 'same' (no false alarm)", !SameNetwork.Judge("192.168.1.1", "", "192.168.1.1", "AA-BB-CC-00-11-22", "Home", "Hotspot"));
+        Check("same network: a hardware address that could not be read, with equal or unknown names, still counts as same", SameNetwork.Judge("192.168.1.1", "", "192.168.1.1", "", "Home", "home") && SameNetwork.Judge("192.168.1.1", "", "192.168.1.1", "", "", "Hotspot"));
+        Check("same network: when both hardware addresses are known the names do not matter (SNcial and SNcial_5G on one router)", SameNetwork.Judge("10.0.0.1", "AA-BB-CC-00-11-22", "10.0.0.1", "aa-bb-cc-00-11-22", "SNcial", "SNcial_5G"));
+        Check("protect: a network Windows has not identified yet is protected, and the reason says so", BackupNetworks.MainProtectionReason(false, NetworkRole.Unlabelled, identified: false).Contains("not identified") && BackupNetworks.MainProtectionReason(false, NetworkRole.Main, identified: true) == "");
+        Check("alarm: the main connection on a backup network, or both on one network, is an alarm; unsorted or not yet identified is not",
+            BackupNetworks.IsAlarming(true, NetworkRole.Main, true) && BackupNetworks.IsAlarming(false, NetworkRole.Backup, true) && BackupNetworks.IsAlarming(false, NetworkRole.Barred, true)
+            && !BackupNetworks.IsAlarming(false, NetworkRole.Unlabelled, true) && !BackupNetworks.IsAlarming(false, NetworkRole.Unlabelled, false) && !BackupNetworks.IsAlarming(false, NetworkRole.Main, true));
+        Check("watchdog: the path of a running program is found by its process id (this very program)", ProcPath.Of(Environment.ProcessId) is string pp && pp.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || ProcPath.Of(Environment.ProcessId) is string pp2 && pp2.Length > 0);
+        Check("watchdog: a process that does not exist has no path (and no crash)", ProcPath.Of(int.MaxValue - 7) is null);
+        // a game bundle: one rule for the launcher AND the game itself, which live in different folders
+        var bundle = new AppRule("Endfield", null, "watch", Exes: new[] { "Launcher.exe", "Endfield.exe" }, MbPerWindow: 1, Folders: new[] { @"C:\Program Files\GRYPHLINK", @"D:\Sijan\EndField Game" });
+        var bg = new DownloadGuard(new[] { bundle });
+        Check("bundle: the launcher in its folder is watched", bg.Record(@"C:\Program Files\GRYPHLINK\1.6.0\Launcher.exe", 2_000_000, DateTime.UtcNow) is { Kind: GuardKind.Block });
+        Check("bundle: the game in ITS folder is watched by the same rule", new DownloadGuard(new[] { bundle }).Record(@"D:\Sijan\EndField Game\Endfield.exe", 2_000_000, DateTime.UtcNow) is { Kind: GuardKind.Block, Rule: "Endfield" });
+        Check("bundle: the same file name in a folder that is not part of the bundle is left alone", new DownloadGuard(new[] { bundle }).Record(@"E:\Elsewhere\Endfield.exe", 2_000_000, DateTime.UtcNow) is null);
+        Check("bundle: both folders count as covered, an unrelated folder does not", PolicyBuilder.IsCovered(@"D:\Sijan\EndField Game\Endfield.exe", new[] { bundle }) && PolicyBuilder.IsCovered(@"C:\Program Files\GRYPHLINK\Launcher.exe", new[] { bundle }) && !PolicyBuilder.IsCovered(@"E:\x\Endfield.exe", new[] { bundle }));
+        Check("bundle: the folder box text maps to folder / folders and back", PolicyBuilder.FromLines("") is (null, null) && PolicyBuilder.FromLines("C:\\a") is ("C:\\a", null) && PolicyBuilder.FromLines("C:\\a\r\nD:\\b") is (null, ["C:\\a", "D:\\b"]) && PolicyBuilder.ToLines(bundle).Split("\r\n").Length == 2);
+        var bundleBack = BackupPolicy.Parse(BackupPolicy.ToJson(new PolicyFile(new List<AppRule> { bundle })));
+        Check("bundle: the policy file round-trips both folders", bundleBack.BackupRules[0].AllFolders().Count == 2 && bundleBack.BackupRules[0].Exes!.Length == 2);
+        // Network Activity: down AND up, on the main connection AND the backup
+        var act = new NetUsage(); var tAct = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        act.Add(@"C:\g\game.exe", 50_000_000, tAct, "Main"); act.Add(@"C:\g\game.exe", 3_000_000, tAct, "Backup"); act.AddUp(@"C:\g\game.exe", 2_000_000, "Main");
+        act.AddUp(@"C:\u\backup.exe", 9_000_000, "Backup");
+        var actRows = act.Rows(5);
+        Check("activity: a program that uses both connections is 'Both'; down and up are counted separately", actRows.First(r => r.Name == "game.exe") is { Down: 53_000_000, Up: 2_000_000, On: "Both" });
+        Check("activity: an upload-only program still shows, with 'Backup' and no download", actRows.First(r => r.Name == "backup.exe") is { Down: 0, Up: 9_000_000, On: "Backup" });
+        Check("activity: the busiest program (down plus up) comes first", actRows[0].Name == "game.exe");
+        Check("activity: the BACKUP peak only counts downloads on the backup (a big download on main does not make a program 'heavy on the backup')", act.PeakFor("game.exe") == 3_000_000);
+        Check("activity: the table peak counts every download", actRows.First(r => r.Name == "game.exe").PeakDown == 53_000_000);
+        Check("activity: programs seen on the backup come first in the picker", act.Seen()[0].Name is "backup.exe" or "game.exe" && act.Seen().Take(2).All(p => p.Name is "backup.exe" or "game.exe"));
+        string actFile = Path.Combine(Path.GetTempPath(), "nas-activity-" + Guid.NewGuid().ToString("N") + ".json"); act.Save(actFile);
+        var act2 = new NetUsage(); act2.LoadFrom(actFile, DateOnly.FromDateTime(DateTime.Now)); File.Delete(actFile);
+        Check("activity: up, 'On' and the backup peak survive a restart", act2.Rows(5).First(r => r.Name == "game.exe") is { Up: 2_000_000, On: "Both" } && act2.PeakFor("game.exe") == 3_000_000);
+        Check("activity: an older programs.json (without up / on) still loads", new Func<bool>(() => { string f = Path.Combine(Path.GetTempPath(), "nas-old-" + Guid.NewGuid().ToString("N") + ".json"); File.WriteAllText(f, "{\"Day\":\"" + DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd") + "\",\"Programs\":[{\"Name\":\"x.exe\",\"Path\":\"C:\\\\x.exe\",\"Bytes\":5,\"Peak\":5}]}"); var u = new NetUsage(); u.LoadFrom(f, DateOnly.FromDateTime(DateTime.Now)); File.Delete(f); return u.Rows(5) is [{ Name: "x.exe", Down: 5, Up: 0 }]; })());
+        Check("activity: event addresses are read as little-endian text", EtwNetSource.ToIp(2138643372) == "172.27.121.127" && EtwNetSource.ToIp(System.Net.IPAddress.Parse("10.0.0.2")) == "10.0.0.2" && EtwNetSource.ToIp(null) == "");
+        var srt = new List<UsageRow> { new("beta.exe", 5_000_000, 100, 4_000_000, "Main", 0), new("Alpha.exe", 1_000_000, 9_000_000, 900_000, "Backup", 9_500_000), new("gamma.exe", 3_000_000, 3_000_000, 8_000_000, "Both", 1_000_000), new("delta.exe", 5_000_000, 100, 1_000_000, "", 0) };
+        Check("sort: Program goes A to Z ignoring case; pressing again flips it", UsageSort.Apply(srt, "program").Select(r => r.Name).SequenceEqual(new[] { "Alpha.exe", "beta.exe", "delta.exe", "gamma.exe" }) && UsageSort.Apply(srt, "program", flip: true).First().Name == "gamma.exe");
+        Check("sort: Total (down plus up, the default) puts the busiest first, ties by name", UsageSort.Apply(srt, "total").Select(r => r.Name).SequenceEqual(new[] { "Alpha.exe", "gamma.exe", "beta.exe", "delta.exe" }) && UsageSort.Apply(srt, "total", flip: true).First().Name == "beta.exe");
+        Check("sort: On Backup puts the programs that used most of your phone's data first", UsageSort.Apply(srt, "backup").Select(r => r.Name).SequenceEqual(new[] { "Alpha.exe", "gamma.exe", "beta.exe", "delta.exe" }));
+        Check("sort: Trigger puts the fastest 10 seconds first", UsageSort.Apply(srt, "trigger").First().Name == "gamma.exe" && UsageSort.Apply(srt, "trigger", flip: true).First().Name == "Alpha.exe");
+        Check("sort: Watch List puts watched programs first", UsageSort.Apply(srt, "watch", watched: r => r.Name == "delta.exe").First().Name == "delta.exe" && UsageSort.Apply(srt, "watch", flip: true, watched: r => r.Name == "delta.exe").Last().Name == "delta.exe");
+        Check("usage row: Total is down plus up", srt[1].Total == 10_000_000);
+        Check("activity: 'On Backup' counts down AND up that went through the backup, and nothing from the main connection", actRows.First(r => r.Name == "game.exe").BackupBytes == 3_000_000 && actRows.First(r => r.Name == "backup.exe").BackupBytes == 9_000_000);
+        Check("activity: the backup amount survives a restart; an old file that knew nothing about Main/Backup counts as all backup", act2.Rows(5).First(r => r.Name == "game.exe").BackupBytes == 3_000_000);
+        var two = new List<(string, string)> { ("Wi-Fi", "SNcial"), ("Wi-Fi 2", "SNcial_5G") };
+        var swapped = new List<(string, string)> { ("Wi-Fi", "SNcial_5G"), ("Wi-Fi 2", "SNcial") };
+        Check("roles: the adapter on the Main network is main, the one on the Backup network is backup", BackupNetworks.Assign(two, BL, new[] { "SNcial" }, new[] { "SNcial_5G" }, "", "") is ("Wi-Fi 2", "Wi-Fi"));
+        Check("roles: adapters swapped by mistake: the roles follow the NETWORKS, not the adapter names", BackupNetworks.Assign(swapped, BL, new[] { "SNcial" }, new[] { "SNcial_5G" }, "Wi-Fi 2", "Wi-Fi") is ("Wi-Fi", "Wi-Fi 2"));
+        Check("roles: the same result in whitelist mode", BackupNetworks.Assign(swapped, WL, new[] { "SNcial_5G" }, new[] { "SNcial" }, "Wi-Fi 2", "Wi-Fi") is ("Wi-Fi", "Wi-Fi 2"));
+        Check("roles: both adapters on the backup network (the 6.9 GB case): no adapter may be main, so nothing is invented", BackupNetworks.Assign(new List<(string, string)> { ("Wi-Fi", "SNcial"), ("Wi-Fi 2", "SNcial") }, BL, new[] { "SNcial" }, new[] { "SNcial_5G" }, "Wi-Fi 2", "Wi-Fi") is null);
+        Check("roles: a main network plus an UNLABELLED one: the unlabelled one is the backup", BackupNetworks.Assign(new List<(string, string)> { ("Wi-Fi", "Hotel"), ("Wi-Fi 2", "SNcial_5G") }, BL, new[] { "SNcial" }, new[] { "SNcial_5G" }, "", "") is ("Wi-Fi 2", "Wi-Fi"));
+        Check("roles: an unlabelled network never becomes main by itself", BackupNetworks.Assign(new List<(string, string)> { ("Wi-Fi", "SNcial"), ("Wi-Fi 2", "Hotel") }, BL, new[] { "SNcial" }, new[] { "SNcial_5G" }, "Wi-Fi 2", "Wi-Fi") is null);
+        Check("protect: on the main connection and nothing special: nothing protected", BackupNetworks.ProtectedAdapters(Active.Primary, "Wi-Fi 2", "Wi-Fi", false).Count == 0);
+        Check("protect: on the backup: the backup is protected", BackupNetworks.ProtectedAdapters(Active.Backup, "Wi-Fi 2", "Wi-Fi", false).SequenceEqual(new[] { "Wi-Fi" }));
+        Check("protect: the main connection is on a backup network: the MAIN adapter is protected while in use (the 6.9 GB case)", BackupNetworks.ProtectedAdapters(Active.Primary, "Wi-Fi 2", "Wi-Fi", true).SequenceEqual(new[] { "Wi-Fi 2" }));
+        Check("protect: on the backup AND main is a backup network: both adapters are protected", BackupNetworks.ProtectedAdapters(Active.Backup, "Wi-Fi 2", "Wi-Fi", true).OrderBy(x => x).SequenceEqual(new[] { "Wi-Fi", "Wi-Fi 2" }));
+        Check("protect: with only one connection there is nothing to compare, nothing is protected", BackupNetworks.ProtectedAdapters(Active.Primary, "Wi-Fi", "", true).Count == 0);
+        Check("protect: the reason says why", BackupNetworks.MainProtectionReason(true, NetworkRole.Main).Contains("same network") && BackupNetworks.MainProtectionReason(false, NetworkRole.Backup).Contains("labelled as backup") && BackupNetworks.MainProtectionReason(false, NetworkRole.Unlabelled).Contains("not labelled") && BackupNetworks.MainProtectionReason(false, NetworkRole.Main) == "");
         var wired = new List<AdapterInfo> { A("Wi-Fi", "Intel Wi-Fi 6", AdapterKind.WiFi, true, true), A("Ethernet", "Realtek PCIe GbE", AdapterKind.Ethernet, true, true) };
         Check("suggest: no phone: wired is main, Wi-Fi is the backup", AdapterDiscovery.Suggest(wired) is ("Ethernet", "Wi-Fi"));
         Check("suggest: only one connection: no backup (null), not an invented one", AdapterDiscovery.Suggest(new List<AdapterInfo> { A("Wi-Fi", "Intel Wi-Fi 6", AdapterKind.WiFi, true, true) }) is ("Wi-Fi", null));

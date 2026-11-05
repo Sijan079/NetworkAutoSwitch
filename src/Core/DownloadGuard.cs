@@ -35,7 +35,7 @@ public class DownloadGuard
     /// (so two launchers that are both called launcher.exe don't get mixed up).</summary>
     AppRule? FindRule(string exePath) =>
         _rules.FirstOrDefault(r => r.Exes!.Any(e => e.Equals(System.IO.Path.GetFileName(exePath), StringComparison.OrdinalIgnoreCase))
-                                && (r.Folder is null || exePath.StartsWith(r.Folder, StringComparison.OrdinalIgnoreCase)));
+                                && r.InFolder(exePath));
 
     public static string DisplayNameFor(string rule, string path) =>
         $"{BackupPolicy.Prefix}DL-{rule}-{(uint)StringComparer.OrdinalIgnoreCase.GetHashCode(path):x8}";
@@ -142,45 +142,60 @@ public class DownloadGuard
         $"$r = Get-NetFirewallRule -DisplayName '{a.DisplayName}' -ErrorAction SilentlyContinue; if ($r) {{ $r | Remove-NetFirewallRule -ErrorAction Stop }}; exit 0";
 }
 
-/// <summary>Reads per-process inbound bytes from Windows' own network events (ETW, no driver).
-/// Needs admin. Only counts packets whose local address belongs to the backup adapter.</summary>
+/// <summary>Reads per-process network bytes (down AND up) from Windows' own network events (ETW, no driver). Needs admin.
+/// It reports every IPv4 packet batch with both addresses; the engine decides which connection it belongs to and what to do with it.</summary>
 public sealed class EtwNetSource : IDisposable
 {
     readonly TraceEventSession _session;
-    readonly HashSet<string> _localIps;
-    readonly Dictionary<int, string?> _pidPath = new();
-    public long EventsSeen, EventsMatched;
+    readonly Dictionary<int, (string? Path, DateTime At)> _pidPath = new();
+    readonly Dictionary<int, long> _unnamed = new();      // bytes from programs whose name Windows would not give us (pid -> bytes)
+    public long EventsSeen, EventsMatched, EventsNoPath;
 
-    public EtwNetSource(IEnumerable<IPAddress> backupLocalIps, Action<string, long> onInbound)
+    /// <param name="onEvent">(program path, bytes, inbound?, address 1, address 2): the two addresses of the packet; one of them is this PC.</param>
+    /// <param name="unnamedFilter">Which events matter when a program cannot be named (the protected connections). null = all.</param>
+    public EtwNetSource(Action<string, long, bool, string, string> onEvent, Func<string, string, bool>? unnamedFilter = null)
     {
-        _localIps = backupLocalIps.Select(i => i.ToString()).ToHashSet();
         _session = new TraceEventSession("NetAutoSwitchWatch");
         _session.EnableProvider("Microsoft-Windows-Kernel-Network");
         _session.Source.Dynamic.All += data =>
         {
-            // Kernel-Network: event 11 = TCP IPv4 data received, 43 = UDP IPv4 received (field names: PID, size, daddr, saddr)
+            // Kernel-Network IPv4: 10 = TCP data sent, 11 = TCP data received, 42 = UDP sent, 43 = UDP received (field names: PID, size, daddr, saddr)
             int id = (int)data.ID;
-            if (id != 11 && id != 43) return;
+            bool inbound = id is 11 or 43;
+            if (!inbound && id is not (10 or 42)) return;
             Interlocked.Increment(ref EventsSeen);
             try
             {
-                if (!(AddrMatches(data.PayloadByName("daddr")) || AddrMatches(data.PayloadByName("saddr")))) return;
+                string a = ToIp(data.PayloadByName("daddr")), b = ToIp(data.PayloadByName("saddr"));
+                if (a.StartsWith("127.") && b.StartsWith("127.")) return;       // this PC talking to itself
                 int pid = Convert.ToInt32(data.PayloadByName("PID"));
                 long size = Convert.ToInt64(data.PayloadByName("size"));
                 string? path = PathOf(pid);
-                if (path is null) return;
+                if (path is null)
+                {   // do not drop it silently: a program we cannot name cannot be watched or blocked, and the user must be able to see that
+                    Interlocked.Increment(ref EventsNoPath);
+                    if (inbound && (unnamedFilter?.Invoke(a, b) ?? true)) lock (_pidPath) _unnamed[pid] = _unnamed.GetValueOrDefault(pid) + size;
+                    return;
+                }
                 Interlocked.Increment(ref EventsMatched);
-                onInbound(path, size);
+                onEvent(path, size, inbound, a, b);
             }
             catch { /* never let a bad event kill the session */ }
         };
         new Thread(() => { try { _session.Source.Process(); } catch { } }) { IsBackground = true }.Start();
     }
 
-    bool AddrMatches(object? v) => Matches(v, _localIps);
-
-    /// <summary>Events deliver IPv4 addresses as a signed Int32 in little-endian order
+    /// <summary>An address from an event as text. Events deliver IPv4 addresses as a signed Int32 in little-endian order
     /// (observed live: 2138643372 = 172.27.121.127). Unsigned and IPAddress forms are accepted too.</summary>
+    public static string ToIp(object? v) => v switch
+    {
+        null => "",
+        IPAddress ip => ip.ToString(),
+        int i => new IPAddress(BitConverter.GetBytes(unchecked((uint)i))).ToString(),
+        uint u => new IPAddress(BitConverter.GetBytes(u)).ToString(),
+        _ => v.ToString() ?? "",
+    };
+
     public static bool Matches(object? v, HashSet<string> localIps)
     {
         if (v is null) return false;
@@ -195,14 +210,29 @@ public sealed class EtwNetSource : IDisposable
         return localIps.Contains(v.ToString() ?? "");
     }
 
+    /// <summary>Where the program of this process lives. QueryFullProcessImageName works for protected processes too (anti-cheat, other users);
+    /// MainModule is only the second try. A failure is remembered for 5 seconds only (a process that is just starting must not be ignored for good).</summary>
     string? PathOf(int pid)
     {
         lock (_pidPath)
         {
-            if (_pidPath.TryGetValue(pid, out var cached)) return cached;
-            string? p = null;
-            try { p = Process.GetProcessById(pid).MainModule?.FileName; } catch { }
-            return _pidPath[pid] = p;
+            if (_pidPath.TryGetValue(pid, out var c) && (c.Path is not null || DateTime.UtcNow - c.At < TimeSpan.FromSeconds(5))) return c.Path;
+            string? p = ProcPath.Of(pid);
+            if (p is null) { try { p = Process.GetProcessById(pid).MainModule?.FileName; } catch { } }
+            _pidPath[pid] = (p, DateTime.UtcNow);
+            return p;
+        }
+    }
+
+    /// <summary>Bytes that came in from programs we could not name since the last call (and who they were), or null when there were none.</summary>
+    public (long Bytes, string Who)? TakeUnnamed()
+    {
+        lock (_pidPath)
+        {
+            if (_unnamed.Count == 0) return null;
+            var top = _unnamed.OrderByDescending(kv => kv.Value).Take(3).Select(kv => { try { return $"{Process.GetProcessById(kv.Key).ProcessName} (pid {kv.Key})"; } catch { return $"pid {kv.Key}"; } }).ToList();
+            long total = _unnamed.Values.Sum(); _unnamed.Clear();
+            return (total, string.Join(", ", top));
         }
     }
 

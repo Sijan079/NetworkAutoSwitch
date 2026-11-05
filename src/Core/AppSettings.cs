@@ -27,6 +27,13 @@ public sealed class AppSettings
     /// <summary>Daily limit for data through the backup connection, in MB. 0 = no limit. You are told at 80 % and when it is reached.</summary>
     public int DailyCapMB { get; set; } = 0;
 
+    /// <summary>"Blacklist" or "Whitelist": how the two network tables are read (see ListMode). Each mode keeps its own pair of tables.</summary>
+    public string NetworkListMode { get; set; } = "Blacklist";
+    public List<string> BlacklistMainNetworks { get; set; } = new();       // networks barred from being main (so always backup)
+    public List<string> BlacklistBackupNetworks { get; set; } = new();     // networks barred from being backup (so always main)
+    public List<string> WhitelistMainNetworks { get; set; } = new();       // the only networks allowed to be main
+    public List<string> WhitelistBackupNetworks { get; set; } = new();     // the only networks allowed to be backup
+
     public ConnectionMode ConnectionMode => Enum.TryParse<ConnectionMode>(Mode, true, out var m) ? m : ConnectionMode.Auto;
 
     public static string DefaultFile => Path.Combine(Paths.DataDir, "settings.json");
