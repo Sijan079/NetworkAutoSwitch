@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/Sijan079/NetworkAutoSwitch)](https://github.com/Sijan079/NetworkAutoSwitch/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Do you live in an area where the Wi-Fi is unstable, so you often rely on mobile data to do anything on the Internet? And your data plan is limited, so you do not want downloads to use up every last bit of it?**
+**Do you live in an area where the Wi-Fi is unstable, so you often rely on mobile data to do anything on the Internet? But your data plan is limited, so you do not want downloads to use up every last bit of it?**
 
 Network Auto Switch is a Windows tray app made for exactly that.
 
@@ -17,8 +17,8 @@ Windows 10 and 11 (64-bit). It needs administrator rights, because it changes ne
 ## Contents
 
 - [Install](#install)
-- [Using the app](#using-the-app)
 - [How it works, in short](#how-it-works-in-short)
+- [Using the app](#using-the-app)
 - [Documentation](#documentation)
 - [Build from source](#build-from-source)
 - [Known limits](#known-limits)
@@ -34,6 +34,16 @@ Nothing else needs installing: the app carries its own .NET. A `.sha256` file si
 - **Upgrading**: run a newer installer over the old one. It closes the running app the normal way (which puts your network settings back), replaces it, and keeps your settings and policy. It never installs an older version over a newer one.
 - **Uninstalling** (Windows *Apps and features*): puts your network settings back, removes the sign-in task, and asks whether to keep your settings, policy and log.
 
+## How it works, in short
+
+1. **Check.** Every second the app opens a short TCP connection to two public servers through **each adapter separately** (a socket pinned to the adapter). No routes are added.
+2. **Decide.** Main link reported down by Windows → switch at once. Main merely failing → **3 failed checks in a row** (about 4 s). Back to main → after the number of seconds you set in Settings (default 10) of good checks, so a flickering Wi-Fi does not bounce you around.
+3. **Switch.** The preferred adapter gets the lowest interface metric and the other the highest, then the app asks Windows which adapter new connections really use and corrects it if wrong. Original values are saved and restored on exit or pause.
+4. **Protect the backup.** Watch rules block a program on the backup **only while it downloads fast**. Blocks last until you lift them. Games are never cut off unless you list them.
+5. **Move downloads back.** When the main connection returns, running downloads on the backup are reset so they reconnect over the main connection.
+
+The details, and why each choice was made, are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Using the app
 
 The tray icon shows the state: **green** = on the main connection, **amber** = on the backup, **red** = nothing works, **grey** = paused. Double-click it to open the window.
@@ -46,16 +56,6 @@ The tray icon shows the state: **green** = on the main connection, **amber** = o
 | **Settings** | Theme, how long the main connection must be good before switching back, mute notifications, **start when I sign in**, the **daily data limit** and check interval for the backup, the Global Trigger (how much a watched program may download before it is blocked), and **Check For Updates**. |
 
 **Exit** (tray menu) restores everything first. A VPN such as Cloudflare WARP is supported; the dashboard then shows a *VPN* badge (see [How it works](docs/ARCHITECTURE.md#vpns)).
-
-## How it works, in short
-
-1. **Check.** Every second the app opens a short TCP connection to two public servers through **each adapter separately** (a socket pinned to the adapter). No routes are added.
-2. **Decide.** Main link reported down by Windows → switch at once. Main merely failing → **3 failed checks in a row** (about 4 s). Back to main → after the number of seconds you set in Settings (default 10) of good checks, so a flickering Wi-Fi does not bounce you around.
-3. **Switch.** The preferred adapter gets the lowest interface metric and the other the highest, then the app asks Windows which adapter new connections really use and corrects it if wrong. Original values are saved and restored on exit or pause.
-4. **Protect the backup.** Watch rules block a program on the backup **only while it downloads fast**. Blocks last until you lift them. Games are never cut off unless you list them.
-5. **Move downloads back.** When the main connection returns, running downloads on the backup are reset so they reconnect over the main connection.
-
-The details, and why each choice was made, are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Documentation
 
