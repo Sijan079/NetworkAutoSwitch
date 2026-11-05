@@ -8,38 +8,34 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+This release stops the app from trusting an adapter to be "the backup": **the role now belongs to the network.** It came from a real mistake: a PC with both adapters on a phone's hotspot used several GB of mobile data on what the app believed was the main connection.
+
 ### Added
-- **Sorting on Network Activity**: every column header has a small sort button at its end (Program, Total, On Backup, Trigger, Watch List). Click a header, or its button, to sort by that column; click again to switch between ascending and descending. The table lists every program that used the network (it scrolls), not only the top ten.
-- **Trigger** (was *Peak 10 s*) is the most a program downloaded in any 10 seconds today, measured like the watch trigger, and shown in amber when it is above it. The hint on the card explains it, and what *On* means (Main, Backup or Both).
-- **Network Activity** (the Dashboard table that used to be *Backup Data*): what each program moved today (**Total**, download plus upload, on the **main connection and on the backup**) and **how much of it went through the backup** (*On Backup*). Hover a row for the download and upload split. It is no longer tied to the backup; the Blocked and Allowed cards still show what the watchdog did. *Backup Data Today* (the daily limit) is unchanged.
-- **Game bundles**: one watch rule can now cover several folders (`folders` in the policy file; one folder per line in the Policy page), so a game's launcher, updater **and the game itself** are one entry. Picking a launcher and its game together in *Choose Programs* keeps both folders. The `folder` field still works as before.
-- **Main and Backup network tables** (Mode, then Choose Connections). Sort your networks by name; the role belongs to the network, so it holds on whichever adapter that network is on. A mode applies to both tables: *Blacklist* (listed networks are barred from that role) or *Whitelist* (only listed networks may have it).
+- **Main and Backup network tables** (Mode, then Choose Connections). Sort your networks by name; the role belongs to the network, so it holds on whichever adapter that network is on, and swapped adapters do no harm. One mode applies to both tables: *Blacklist* (a table lists the networks barred from that role: barred from main = always backup) or *Whitelist* (a table lists the only networks that may have that role). Each mode keeps its own tables.
 - **Ask once**: a network on neither table gets a prompt (Main, Backup or Later). Until you sort it, it is treated as a backup.
-- **A backup network is protected even when it is the main connection**: watch-list downloads are blocked on it and its data counts toward the daily limit. A network that may not be the backup is never used as the backup.
-- **SAME NETWORK guard**: both connections on one router (compared by the router's address and hardware address) show a badge, a log warning and a notification, because switching cannot help when both fail together.
-- A *MAIN IS PHONE* badge on the Dashboard while the main connection is protected.
+- **A backup network is protected even when it is the main connection**: heavy downloads on your watch list are blocked on it, the download watchdog covers it, and its data counts toward the daily limit. A network that may not be the backup is never used as the backup.
+- **A loud warning when your main connection is your phone**: a red banner under the status row ("Main connection is on SNcial, a backup network. Mobile data may be in use.") with a *Choose Connections* button, and a tray pop-up that **ignores the mute setting**. A network that is only "not sorted yet" or "not identified yet" gets an amber banner and no pop-up.
+- **Same-network guard**: when both connections are on one router (compared by the router's address and hardware address), the dashboard, the log and a notification say so, because switching cannot help when both fail together.
+- **Network Activity** (the dashboard table that used to be *Backup Data*): what each program moved today (**Total**, download plus upload, on the main connection and on the backup), **how much of it went through the backup** (*On Backup*), and **Trigger**: the most it downloaded in any 10 seconds, measured like the watch trigger and shown in amber when it is above it. Hover a row for the download and upload split. *Backup Data Today* (the daily limit) is unchanged.
+- **Sorting**: every Network Activity header has a small sort button at its end (Program, Total, On Backup, Trigger, Watch List); click again to switch between ascending and descending. The table lists every program, not only the top ten.
+- **Game bundles**: one watch rule can cover several folders (`folders` in the policy file; one folder per line in the Policy page), so a game's launcher, updater **and the game itself** are one entry. Picking a launcher and its game together in *Choose Programs* keeps both folders. The `folder` field still works as before.
+- **The dashboard and the Settings page scroll without a scrollbar**: with the mouse wheel, a touchpad, or PageUp / PageDown / Home / End. A window that is too small slides the content instead of squeezing it.
 
 ### Changed
-- **The dashboard and the Settings page scroll without a scrollbar**: with the mouse wheel (anywhere over the page, except over a list that has more rows to scroll), a touchpad, or PageUp / PageDown / Home / End. A window that is too small now slides the content instead of squeezing it.
-- The four *Session* tiles share the card's height equally, each centered in its slot.
-- **Dashboard layout**: *Session* is a narrow card (a quarter of the width) as high as the two cards beside it; *Network Activity* sits above *Blocked*, and Blocked is now always on the dashboard (with a short note while nothing is blocked). *Backup Data Today* reads like "1.31 GB / 10 GB" so it fits.
-- **A loud warning when your main connection is your phone.** A red banner appears under the status row ("Main connection is on SNcial, a backup network. Mobile data may be in use.") with a *Choose Connections* button, and a tray pop-up that **ignores the mute setting** appears. The same goes for both connections being on one network. A network that is only "not sorted yet" or "not identified yet" gets an amber banner and no pop-up.
-- **Dashboard connection cards**: network name, adapter, average ping and uptime on the left; the current ping on the right with "ms" below the number. A connection that does not answer shows a red dash and nothing below it, instead of "Down".
-- The connection in use is shown in full colour (green ping, bright network name); the other card is muted grey, as well as having no coloured border.
-- The Dashboard banner now reads "On Main: SNcial_5G" or "On Backup: SNcial" (the adapter name if the network name is not known).
-- The latency chart's legend (the two adapter names) now sits in the header row next to the title.
+- **After upgrading from 0.2.0 your networks start unsorted.** The first time the app sees each network it asks once whether it is Main or Backup. Until you answer, an unsorted network is treated as a backup, so downloads on your watch list are blocked on it (also on your main connection). Answer the prompt, or open *Choose Connections*, to sort them. Your saved adapter choice still works when the tables cannot decide.
+- **Dashboard redesign**: the connection cards show the network name, adapter, average ping and uptime, with the current ping on the right ("ms" under the number; a connection that does not answer shows a red dash); the connection in use is in full colour and the other one is muted. The status line reads "On Main: SNcial_5G" or "On Backup: SNcial". *Session* is a narrow card as tall as the two beside it, *Network Activity* sits above *Blocked*, and *Blocked* is always on the dashboard (with a short note while nothing is blocked). The latency legend sits in the header row.
 - Choose Connections: the adapter pickers moved under *Advanced*; they only matter when the network tables cannot decide.
-- When both adapters are on one network, or the main connection is on a backup network, the engine now protects the main connection's adapter too (rules, watchdog, block rules and data count cover every protected adapter).
+- The tray menu, tooltip and the mode button say "Main" and "Backup" (with the network name) instead of adapter names.
 
 ### Fixed
-- **Text cut off in the Session card and the connection cards** (small windows, other font sizes or display scaling): the Session numbers are now placed from the real size of their text, and a long number shrinks to fit; the lines on the connection cards are as tall as their text needs.
-- **The download watchdog no longer drops data from programs it cannot name.** The program of a busy process is now found the way Windows' own task tools find it (it also works for protected processes, such as game anti-cheat), a failed lookup is retried after 5 seconds instead of being remembered for good, and when data still comes from a program that cannot be named, the log says so ("WARNING: ... MB came in ... from programs Windows would not name").
-- **A network Windows has not identified yet is protected**, not trusted: the main connection is protected until Windows names it, and the app rechecks every 2 seconds (it used to wait up to 30 seconds with no protection). If Windows gives no names at all, the app says so once.
-- The same-network check no longer reports a false alarm when the router's hardware address cannot be read and the two networks have different names. The lookup is also tried twice.
-- The data tile and the Backup Data card now say the main connection counts too while it is protected as a backup network.
-- The tray menu, tooltip and the Dashboard's mode button use "Main" and "Backup" (with the network name) instead of adapter names.
-- Removing the app's firewall rules could run at the same time as adding new ones, deleting them. Removal now finishes first.
-- Windows' stand-in network name `Identifying...` is no longer treated as a network (it was being asked about and could be saved).
+- **The download watchdog no longer drops data from programs it cannot name.** A program's path is now found the way Windows' own task tools find it (protected processes, such as game anti-cheat, too), a failed lookup is retried after 5 seconds instead of being remembered for good, and data that still comes from a program that cannot be named is reported in the log.
+- **A network Windows has not identified yet is protected**, not trusted: the main connection is protected until Windows names it, and the app rechecks every 2 seconds.
+- Removing the app's firewall rules could run at the same time as adding new ones and delete them. Removal now finishes first.
+- Windows' stand-in network name `Identifying...` is no longer treated as a network.
+- The same-network check no longer raises a false alarm when the router's hardware address cannot be read and the two networks have different names.
+- Text cut off in the *Session* card and the connection cards (small windows, other font sizes or display scaling).
 
 ## [0.2.0] - 2026-11-04
 
