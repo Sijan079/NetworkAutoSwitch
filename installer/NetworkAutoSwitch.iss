@@ -83,6 +83,8 @@ Filename: "powershell.exe"; Flags: runhidden waituntilterminated; Check: not Wiz
   Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName {#TaskName} -Confirm:$false -ErrorAction SilentlyContinue"""
 #endif
 Filename: "{app}\{#AppExe}"; Description: "Start {#AppName} now"; Flags: nowait postinstall skipifsilent
+; an update started from inside the app runs silently: start the new version again by itself
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 #ifndef TestInstall

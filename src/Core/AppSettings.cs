@@ -27,6 +27,9 @@ public sealed class AppSettings
     /// <summary>Daily limit for data through the backup connection, in MB. 0 = no limit. You are told at 80 % and when it is reached.</summary>
     public int DailyCapMB { get; set; } = 0;
 
+    /// <summary>Look for a newer release at start and once a day. Only reads GitHub's public release information; installing always needs your click.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
     /// <summary>"Blacklist" or "Whitelist": how the two network tables are read (see ListMode). Each mode keeps its own pair of tables.</summary>
     public string NetworkListMode { get; set; } = "Blacklist";
     public List<string> BlacklistMainNetworks { get; set; } = new();       // networks barred from being main (so always backup)

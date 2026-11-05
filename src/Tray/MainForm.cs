@@ -41,13 +41,13 @@ sealed class MainForm : Form
     readonly NoWheelComboBox _grace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 172, Margin = new Padding(0, 0, 0, 10) };
     TableLayoutPanel _grid = new();
     const float ChartPct = 27, BottomPct = 73;                        // the two stretching rows (percent of what is left)
-    const int BlockedRowHeight = 172, AllowedRowHeight = 190, DashboardMinHeight = 880;
+    const int BlockedRowHeight = 214, DashboardMinHeight = 922;
     Control[] _sessionTiles = Array.Empty<Control>();
     readonly TableLayoutPanel _tilesGrid = new() { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
     readonly TableLayoutPanel _bottom = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
     readonly Label _blockedEmpty = new() { Dock = DockStyle.Fill, Text = "Nothing is blocked. Programs the watchdog stops show up here.", ForeColor = Ui.Muted, BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0) };
     FlowLayoutPanel? _blockedSide;
-    bool _allowedShown;
+    Button? _unblockBtn, _unblockAllBtn, _blockNowBtn, _watchAgainBtn;
     string _sortKey = "total"; bool _sortFlip;
     static readonly string[] UsageKeys = { "program", "total", "backup", "trigger", "watch" };      // the sort key of each Network Activity column, left to right
     ScrollSurface? _dashPage;
@@ -55,8 +55,6 @@ sealed class MainForm : Form
     readonly Panel _warnBar = new() { Dock = DockStyle.Fill, Padding = new Padding(16, 0, 8, 0), Visible = false, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
     readonly Label _warnText = new() { Dock = DockStyle.Fill, ForeColor = Color.White, BackColor = Color.Transparent, Font = Ui.UiFont(10f, bold: true), TextAlign = ContentAlignment.MiddleLeft };
     // programs you unblocked: countdown until the watchdog watches them again
-    readonly Card _allowedCard = new(Ui.Eye, "Allowed For Now");
-    readonly ListView _allowedList = new() { MultiSelect = true };
     // the log is a custom-drawn list so each row can be tinted and tagged by what it is about
     sealed record LogEntry(string Time, string Message, LogKind Kind);
     readonly ListBox _log = new() { Dock = DockStyle.Fill, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 28, IntegralHeight = false, BorderStyle = BorderStyle.None,
@@ -160,15 +158,14 @@ sealed class MainForm : Form
     {
         var page = new ScrollSurface();                                       // no scrollbar: the wheel, a touchpad and PageUp / PageDown scroll it
         var pad = Page().Padding; page.Content.Padding = pad;
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = Ui.Bg };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = Ui.Bg };
         _grid = grid;
         _dashPage = page; FitDashboardHeight();      // a small window scrolls instead of squeezing the cards
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));                 // 0  status
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));                  // 1  warning banner: height 0 until the main connection is a backup network (or both are one network)
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));                // 2  the two connection cards
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, ChartPct));            // 3  latency
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));                  // 4  allowed: height 0 until you have unblocked something
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, BottomPct));           // 5  Session (a quarter of the width, both rows high), Network Activity above Blocked
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, BottomPct));           // 4  Session (a quarter of the width, both rows high), Network Activity above Blocked
 
         // banner: status icon, status text, badges (dry-run, VPN, locked), mode, pause/resume
         var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Ui.Bg, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
@@ -191,7 +188,9 @@ sealed class MainForm : Form
         Ui.Tip.SetToolTip(_vpnBadge, "A VPN (such as Cloudflare WARP) refuses the internet check on a single connection. The app checks the connection in use through the VPN and the other one by its gateway, so it cannot confirm the other connection has internet before switching to it. For exact checks, exclude 8.8.8.8 and 9.9.9.9 from the VPN (in WARP: Preferences, Advanced, Split Tunnels, Exclude IPs).");
         _pauseBtn.Margin = _resumeBtn.Margin = new Padding(0);
         var cluster = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, (68 - Ui.BtnH) / 2 - Ui.Gap / 2, 0, 0) };
-        cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_sameBadge); cluster.Controls.Add(_phoneMainBadge); cluster.Controls.Add(_vpnBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
+        _updateBtn = Ui.Btn(Ui.Download, "Update", "A newer version is available. Click to download, check and install it.", () => InstallUpdate?.Invoke(), BtnKind.Primary);
+        _updateBtn.Margin = new Padding(0, 0, 8, 0); _updateBtn.Visible = false;
+        cluster.Controls.Add(_updateBtn); cluster.Controls.Add(_dryBadge); cluster.Controls.Add(_sameBadge); cluster.Controls.Add(_phoneMainBadge); cluster.Controls.Add(_vpnBadge); cluster.Controls.Add(_lockBadge); cluster.Controls.Add(_modeBtn); cluster.Controls.Add(_pauseBtn); cluster.Controls.Add(_resumeBtn);
         top.Controls.Add(_bannerIcon, 0, 0); top.Controls.Add(_banner, 1, 0); top.Controls.Add(_bannerSkeleton, 1, 0); top.Controls.Add(cluster, 2, 0);
 
         // adapters
@@ -200,32 +199,25 @@ sealed class MainForm : Form
         cards.Controls.Add(_cardP, 0, 0); cards.Controls.Add(_cardB, 1, 0);
         Ui.Tip.SetToolTip(_cardP, "Main connection"); Ui.Tip.SetToolTip(_cardB, "Backup connection");
 
-        // blocked-now card (override controls)
+        // one table for what is blocked and what you let through for now (Status says which)
         Ui.StyleList(_blockedList);
-        _blockedList.Columns.Add("Program", 380); _blockedList.Columns.Add("Rule", 140); _blockedList.Columns.Add("Since", 100);
+        _blockedList.Columns.Add("Program", 330); _blockedList.Columns.Add("Rule", 120); _blockedList.Columns.Add("Status", 170);
         foreach (var g in new[] { "10 Min", "30 Min", "1 Hour", "3 Hours" }) _grace.Items.Add(g);
         _grace.SelectedIndex = 0;
         Ui.Tip.SetToolTip(_grace, "How long to leave the program alone after you unblock it.");
-        var one = Ui.Btn(Ui.Unlock, "Unblock", "Unblock the selected programs.\nBlocks never expire by themselves; you decide.", () => OverrideSelected(all: false), BtnKind.Success);
-        var all = Ui.Btn(Ui.Unlock, "Unblock All", "Unblock everything that is blocked.", () => OverrideSelected(all: true));
-        one.AutoSize = all.AutoSize = false; one.Width = 140; all.Width = 150; one.Margin = all.Margin = new Padding(0, 0, 8, 0); _grace.Margin = new Padding(0, 2, 8, 0);
+        _unblockBtn = Ui.Btn(Ui.Unlock, "Unblock", "Unblock the selected blocked programs. The watchdog leaves them alone for the time on the left.\nBlocks never expire by themselves; you decide.", () => OverrideSelected(all: false), BtnKind.Success);
+        _unblockAllBtn = Ui.Btn(Ui.Unlock, "Unblock All", "Unblock everything that is blocked.", () => OverrideSelected(all: true));
+        _blockNowBtn = Ui.Btn(Ui.Lock, "Block", "Block the selected allowed programs again immediately.", () => AllowedAction(block: true), BtnKind.Danger);
+        _watchAgainBtn = Ui.Btn(Ui.Eye, "Watch", "End the allowed time of the selected programs now. They are blocked only if they download too fast.", () => AllowedAction(block: false));
+        foreach (var bt in new[] { _unblockBtn, _unblockAllBtn, _blockNowBtn, _watchAgainBtn }) { bt.AutoSize = true; bt.Margin = new Padding(0, 0, 6, 0); }
+        _grace.Width = 84; _grace.Margin = new Padding(0, 2, 6, 0);
         var side = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 8, 0, 0) };
-        side.Controls.Add(_grace); side.Controls.Add(one); side.Controls.Add(all);
+        side.Controls.Add(_grace); side.Controls.Add(_unblockBtn); side.Controls.Add(_unblockAllBtn); side.Controls.Add(_blockNowBtn); side.Controls.Add(_watchAgainBtn);
         _blockedSide = side;
+        _blockedList.SelectedIndexChanged += (_, _) => UpdateBlockedButtons();
         _blockedCard.Body.Controls.Add(_blockedList); _blockedCard.Body.Controls.Add(_blockedEmpty); _blockedCard.Body.Controls.Add(side);
         ShowBlockedList(0);
-        _blockedCard.SetHint("Programs the watchdog stopped because they downloaded too fast on a protected connection. Blocks never expire by themselves: you decide.");
-
-        // allowed-for-now card (countdown)
-        Ui.StyleList(_allowedList);
-        _allowedList.Columns.Add("Program", 340); _allowedList.Columns.Add("Rule", 120); _allowedList.Columns.Add("Watched Again In", 140);
-        var blockNow = Ui.Btn(Ui.Lock, "Block Now", "Block it again immediately.", () => AllowedAction(block: true), BtnKind.Danger);
-        var watchAgain = Ui.Btn(Ui.Eye, "Watch Again", "End the allowed time now. It is blocked only if it downloads too fast.", () => AllowedAction(block: false));
-        blockNow.AutoSize = watchAgain.AutoSize = false; blockNow.Width = watchAgain.Width = 172; blockNow.Margin = watchAgain.Margin = new Padding(0, 0, 0, 10);
-        var aSide = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 188, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(Ui.Gap, 0, 0, 0) };
-        aSide.Controls.Add(blockNow); aSide.Controls.Add(watchAgain);
-        _allowedCard.Body.Controls.Add(_allowedList); _allowedCard.Body.Controls.Add(aSide);
-        _allowedCard.SetHint("You unblocked these. The watchdog leaves them alone until the countdown ends.");
+        _blockedCard.SetHint("Programs the watchdog stopped because they downloaded too fast on a protected connection (Status: Blocked). Blocks never expire by themselves: you decide.\nPrograms you unblocked stay here with a countdown (Status: Allowed): the watchdog leaves them alone until it ends. Block (again) or Watch act on those.");
 
         // latency chart
         var chartCard = _chartCard = new Card(Ui.Chart, "Latency");
@@ -268,7 +260,7 @@ sealed class MainForm : Form
         grid.Controls.Add(top, 0, 0); grid.Controls.Add(_warnBar, 0, 1); grid.Controls.Add(cards, 0, 2); grid.Controls.Add(chartCard, 0, 3);
         _bottom.Controls.Add(statsCard, 0, 0); _bottom.SetRowSpan(statsCard, 2);
         _bottom.Controls.Add(usageCard, 1, 0); _bottom.Controls.Add(_blockedCard, 1, 1);
-        grid.Controls.Add(_allowedCard, 0, 4); grid.Controls.Add(_bottom, 0, 5);
+        grid.Controls.Add(_bottom, 0, 4);
         page.Content.Controls.Add(grid);
         return page;
     }
@@ -321,18 +313,29 @@ sealed class MainForm : Form
         _tilesGrid.ResumeLayout();
     }
 
-    /// <summary>The least height the dashboard needs. The Allowed card adds to it, so the chart and the tables keep their room (the page scrolls instead).</summary>
+    /// <summary>The least height the dashboard needs (a smaller window scrolls instead of squeezing the cards).</summary>
     void FitDashboardHeight()
     {
         if (_dashPage is null) return;
-        _dashPage.MinContentHeight = DashboardMinHeight + (_allowedShown ? AllowedRowHeight : 0);
+        _dashPage.MinContentHeight = DashboardMinHeight;
     }
 
-    /// <summary>Blocked is always on the dashboard: the list while something is blocked, a short note (and idle buttons) while nothing is.</summary>
+    /// <summary>Blocked is always on the dashboard: the list while something is blocked or allowed for now, a short note while nothing is.</summary>
     void ShowBlockedList(int count)
     {
         _blockedList.Visible = count > 0; _blockedEmpty.Visible = count == 0;
-        if (_blockedSide is not null) _blockedSide.Enabled = count > 0;
+        UpdateBlockedButtons();
+    }
+
+    /// <summary>Each button works only on what it can act on: Unblock / Unblock All on blocked rows, Block Now / Watch Again on allowed rows.</summary>
+    void UpdateBlockedButtons()
+    {
+        if (_unblockBtn is null) return;
+        var sel = _blockedList.SelectedItems.Cast<ListViewItem>().ToList();
+        bool anyBlocked = _blockedList.Items.Cast<ListViewItem>().Any(i => i.Name == "blocked");
+        _unblockBtn.Enabled = sel.Any(i => i.Name == "blocked");
+        _unblockAllBtn!.Enabled = anyBlocked;
+        _blockNowBtn!.Enabled = _watchAgainBtn!.Enabled = sel.Any(i => i.Name == "allowed");
     }
 
     /// <summary>Icon + big number + caption.</summary>
@@ -379,6 +382,32 @@ sealed class MainForm : Form
 
     /// <summary>The banner under the status row: shown while the main connection is protected like a backup, or both connections are one network.
     /// Red when it is (probably) your phone, amber when it is only "not sorted yet" or "not identified yet".</summary>
+    // ---------- updates (the tray does the checking and installing; the window only shows it) ----------
+    Button? _updateBtn, _updateNowBtn; Label? _updStatus; UpdateResult? _update;
+    /// <summary>Set by the tray: install the update that was found.</summary>
+    public Action? InstallUpdate;
+    /// <summary>Raised when "Check For Updates" found out the latest version, so the tray can remember it.</summary>
+    public Action<UpdateResult>? UpdateChecked;
+
+    /// <summary>A newer version is known (or no longer is): the dashboard shows an Update button and Settings an Update Now button.</summary>
+    public void SetUpdate(UpdateResult? u)
+    {
+        _update = u is { State: UpdateState.Available } ? u : null;
+        bool on = _update is not null;
+        if (_updateBtn is not null) { _updateBtn.Visible = on; if (on) _updateBtn.Text = "  Update to " + _update!.Latest; }
+        if (_updateNowBtn is not null) _updateNowBtn.Visible = on;
+        if (_updStatus is not null && on) { _updStatus.Text = _update!.Message; _updStatus.ForeColor = Ui.Amber; }
+    }
+
+    /// <summary>Progress or an error from the installer download.</summary>
+    public void SetUpdateProgress(string text, bool error)
+    {
+        if (_updStatus is not null) { _updStatus.Text = text; _updStatus.ForeColor = error ? Ui.Red : Ui.Muted; }
+        bool busy = !error && text.Length > 0;
+        if (_updateBtn is not null) _updateBtn.Enabled = !busy;
+        if (_updateNowBtn is not null) _updateNowBtn.Enabled = !busy;
+    }
+
     void UpdateWarning()
     {
         string net = _engine.PrimaryNetwork ?? "";
@@ -398,7 +427,7 @@ sealed class MainForm : Form
     {
         _warnText.Text = text ?? ""; _warnBar.BackColor = red ? Ui.RedFill : Ui.AmberFill; _warnBar.Visible = text is not null;
         _grid.RowStyles[1].Height = text is null ? 0 : 48;
-        _grid.RowStyles[3].Height = text is null ? ChartPct : ChartPct - 5; _grid.RowStyles[5].Height = text is null ? BottomPct : BottomPct + 5;      // the banner takes its height from the chart, so the table does not get squeezed
+        _grid.RowStyles[3].Height = text is null ? ChartPct : ChartPct - 5; _grid.RowStyles[4].Height = text is null ? BottomPct : BottomPct + 5;      // the banner takes its height from the chart, so the table does not get squeezed
     }
 
     /// <summary>The label at the top: "On Main: SNcial_5G" (the adapter name when the network name is not known).</summary>
@@ -444,49 +473,49 @@ sealed class MainForm : Form
 
     void OverrideSelected(bool all)
     {
-        var names = (all ? _blockedList.Items.Cast<ListViewItem>() : _blockedList.SelectedItems.Cast<ListViewItem>()).Select(i => (string)i.Tag!).ToList();
+        var names = (all ? _blockedList.Items.Cast<ListViewItem>() : _blockedList.SelectedItems.Cast<ListViewItem>()).Where(i => i.Name == "blocked").Select(i => (string)i.Tag!).ToList();
         if (names.Count == 0) return;
         int minutes = GraceMinutes[Math.Max(0, _grace.SelectedIndex)];
-        Task.Run(() => { foreach (var n in names) _engine.OverrideBlock(n, minutes); OnUi(() => { RefreshBlocked(); RefreshAllowed(); }); });   // runs PowerShell: keep off the UI thread
+        Task.Run(() => { foreach (var n in names) _engine.OverrideBlock(n, minutes); OnUi(RefreshBlocked); });   // runs PowerShell: keep off the UI thread
     }
+
+    static readonly bool DemoBlocked = Environment.GetCommandLineArgs().Contains("--demo-blocked");
 
     void RefreshBlocked()
     {
-        var list = _engine.Blocked;
-        var selected = _blockedList.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToHashSet();
+        var list = _engine.Blocked; var allowed = _engine.Allowed;
+        var selected = _blockedList.SelectedItems.Cast<ListViewItem>().Select(i => i.Name + "|" + (string)i.Tag!).ToHashSet();
         _blockedList.BeginUpdate(); _blockedList.Items.Clear();
         foreach (var b in list)
         {
             var since = DateTime.UtcNow - b.Since; if (since < TimeSpan.Zero) since = TimeSpan.Zero;
             string ago = since.TotalHours >= 1 ? $"{(int)since.TotalHours} h {since.Minutes} m" : $"{(int)since.TotalMinutes} min";
-            _blockedList.Items.Add(new ListViewItem(new[] { b.Path, b.Rule, ago }) { Tag = b.DisplayName, Selected = selected.Contains(b.DisplayName) });
+            _blockedList.Items.Add(new ListViewItem(new[] { b.Path, b.Rule, "Blocked " + ago }) { Name = "blocked", Tag = b.DisplayName, Selected = selected.Contains("blocked|" + b.DisplayName) });
+        }
+        foreach (var a in allowed)
+        {
+            var left = a.Until - DateTime.UtcNow; if (left < TimeSpan.Zero) left = TimeSpan.Zero;
+            string t = left.TotalHours >= 1 ? $"{(int)left.TotalHours}:{left.Minutes:00}:{left.Seconds:00}" : $"{(int)left.TotalMinutes}:{left.Seconds:00}";
+            _blockedList.Items.Add(new ListViewItem(new[] { a.Path, a.Rule, "Allowed, watched in " + t }) { Name = "allowed", Tag = a.DisplayName, Selected = selected.Contains("allowed|" + a.DisplayName) });
+        }
+        int shown = list.Count + allowed.Count, blocked = list.Count;
+        if (DemoBlocked && !_engine.Live)      // dev only (--dry-run --demo-blocked): sample rows to see the card
+        {
+            _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files (x86)\Steam\steam.exe", "Steam", "Blocked 3 min" }) { Name = "blocked", Tag = "demo-steam" });
+            _blockedList.Items.Add(new ListViewItem(new[] { @"D:\Games\Endfield\Endfield.exe", "Endfield", "Blocked 12 min" }) { Name = "blocked", Tag = "demo-endfield" });
+            _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files\HoYoPlay\HYPWorker.exe", "HoYoPlay", "Allowed, watched in 9:42" }) { Name = "allowed", Tag = "demo-hyp" });
+            shown += 3; blocked += 2;
         }
         _blockedList.EndUpdate();
-        _blockedCard.SetTitle(list.Count > 0 ? $"Blocked ({list.Count})" : "Blocked");
-        ShowBlockedList(list.Count);
+        _blockedCard.SetTitle(blocked > 0 ? $"Blocked ({blocked})" : "Blocked");
+        ShowBlockedList(shown);
     }
 
     void AllowedAction(bool block)
     {
-        var names = _allowedList.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToList();
+        var names = _blockedList.SelectedItems.Cast<ListViewItem>().Where(i => i.Name == "allowed").Select(i => (string)i.Tag!).ToList();
         if (names.Count == 0) return;
-        Task.Run(() => { foreach (var n in names) { if (block) _engine.BlockAgain(n); else _engine.WatchAgain(n); } OnUi(() => { RefreshBlocked(); RefreshAllowed(); }); });
-    }
-
-    void RefreshAllowed()
-    {
-        var list = _engine.Allowed;
-        var selected = _allowedList.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToHashSet();
-        _allowedList.BeginUpdate(); _allowedList.Items.Clear();
-        foreach (var a in list)
-        {
-            var left = a.Until - DateTime.UtcNow; if (left < TimeSpan.Zero) left = TimeSpan.Zero;
-            string t = left.TotalHours >= 1 ? $"{(int)left.TotalHours}:{left.Minutes:00}:{left.Seconds:00}" : $"{(int)left.TotalMinutes}:{left.Seconds:00}";
-            _allowedList.Items.Add(new ListViewItem(new[] { a.Path, a.Rule, t }) { Tag = a.DisplayName, Selected = selected.Contains(a.DisplayName) });
-        }
-        _allowedList.EndUpdate();
-        _grid.RowStyles[4].Height = list.Count > 0 ? AllowedRowHeight : 0;   // only takes space while something is allowed
-        if (_allowedShown != list.Count > 0) { _allowedShown = list.Count > 0; FitDashboardHeight(); }
+        Task.Run(() => { foreach (var n in names) { if (block) _engine.BlockAgain(n); else _engine.WatchAgain(n); } OnUi(RefreshBlocked); });
     }
 
     /// <summary>What the sort button at the end of a Network Activity column header shows: 0 idle, 1 ascending, 2 descending.</summary>
@@ -509,7 +538,7 @@ sealed class MainForm : Form
 
     void RefreshUsage()
     {
-        RefreshBlocked(); RefreshAllowed();
+        RefreshBlocked();
         var top = UsageSort.Apply(_engine.Usage.Rows(200), _sortKey, _sortFlip, r => _engine.IsWatched(_engine.Usage.PathFor(r.Name) ?? r.Name));
         long triggerBytes = (long)(_engine.TriggerMb * 1_000_000);
         // this table is rebuilt every 2 s, so remember what is selected (by program name) and select it again
@@ -753,7 +782,7 @@ sealed class MainForm : Form
     {
         var page = Page();
         // the cards are stacked at fixed heights inside a panel that scrolls, so a small window can still reach every card
-        int[] heights = { 124, 124, 100, 110, 164, 110, 124, 124 };
+        int[] heights = { 124, 124, 100, 110, 164, 110, 124, 164 };
         var grid = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = heights.Length, BackColor = Ui.Bg, Height = heights.Sum() };
         foreach (int h in heights) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
 
@@ -814,11 +843,13 @@ sealed class MainForm : Form
 
         // about: the version, and a way to ask GitHub whether a newer one exists (only when you click; the app never checks by itself)
         var about = new Card(Ui.Info, "About");
-        about.SetHint("Asks GitHub for the latest release when you click the button. Nothing about you is sent, and the app never checks on its own.");
-        var updStatus = new Label { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Padding = new Padding(8, 8, 0, 0) };
+        about.SetHint("Looks for a newer release on GitHub when the app starts and once a day (turn it off below). Only GitHub's public release information is read; nothing about you is sent. A new version is never installed without your click on Update Now: the installer is checked against the release's SHA-256 file, closes the app the normal way (your network settings are put back) and starts the new version.");
+        var updStatus = _updStatus = new Label { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Padding = new Padding(8, 8, 0, 0) };
         string releaseUrl = UpdateCheck.ReleasesPage;
         var openRelease = Ui.Btn(Ui.OpenFile, "Open Release Page", "Open the release page in your browser.", () => { try { Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true }); } catch { } }, BtnKind.Primary);
         openRelease.Visible = false;
+        _updateNowBtn = Ui.Btn(Ui.Download, "Update Now", "Download this version, check it and install it. The app restarts.", () => InstallUpdate?.Invoke(), BtnKind.Primary);
+        _updateNowBtn.Visible = _update is { State: UpdateState.Available };
         Button? checkBtn = null;
         checkBtn = Ui.Btn(Ui.Refresh, "Check For Updates", "Ask GitHub whether a newer version exists.", async () =>
         {
@@ -827,10 +858,15 @@ sealed class MainForm : Form
             releaseUrl = r.Url; updStatus.Text = r.Message;
             updStatus.ForeColor = r.State == UpdateState.Available ? Ui.Amber : r.State == UpdateState.Failed ? Ui.Red : Ui.Green;
             openRelease.Visible = r.State == UpdateState.Available; checkBtn.Enabled = true;
+            if (r.State != UpdateState.Failed) UpdateChecked?.Invoke(r);
         });
-        var aflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 0, 0) };
+        var autoUpd = new CheckBox { Text = "Check For Updates Automatically", AutoSize = true, BackColor = Ui.CardBg, Checked = AppSettings.Load().CheckForUpdates, Margin = new Padding(2, 8, 0, 0) };
+        autoUpd.CheckedChanged += (_, _) => { try { AppSettings.Update(x => x.CheckForUpdates = autoUpd.Checked); } catch { } };
+        var aflow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 0, 0) };
         aflow.Controls.Add(new Label { Text = "Version " + AppInfo.Version, AutoSize = true, ForeColor = Ui.Text, BackColor = Ui.CardBg, Padding = new Padding(2, 8, 14, 0) });
-        aflow.Controls.AddRange(new Control[] { checkBtn, updStatus, openRelease });
+        aflow.Controls.AddRange(new Control[] { checkBtn, _updateNowBtn, openRelease, updStatus });
+        aflow.SetFlowBreak(updStatus, true); aflow.Controls.Add(autoUpd);
+        if (_update is { State: UpdateState.Available }) { updStatus.Text = _update.Message; updStatus.ForeColor = Ui.Amber; releaseUrl = _update.Url; openRelease.Visible = true; }
         about.Body.Controls.Add(aflow);
 
         foreach (var c in new Control[] { appearance, switching, notes, startup, data, logCard, about }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
@@ -913,8 +949,8 @@ sealed class MainForm : Form
                 $"wheel down scrolls: {scrolled}; one notch moves {one} px; bottom stops at {bottom} (max 300); 100 px back = {back}; top stops at {top}; content that fits does not scroll: {!roomy.Wheel(-120)}; content top at bottom = {-bottom}");
         }
         // the Blocked card beside Session (a sample row; this snapshot only)
-        _blockedList.Items.Clear(); _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files (x86)\Steam\steam.exe", "Steam", "3 min" })); _blockedCard.SetTitle("Blocked (1)");
-        ShowBlockedList(1); Application.DoEvents();
+        _blockedList.Items.Clear(); _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files (x86)\Steam\steam.exe", "Steam", "Blocked 3 min" }) { Name = "blocked", Tag = "Steam" }); _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files\HoYoPlay\HYPWorker.exe", "HoYoPlay", "Allowed, watched in 9:42" }) { Name = "allowed", Tag = "HoYoPlay" }); _blockedCard.SetTitle("Blocked (1)");
+        ShowBlockedList(2); Application.DoEvents();
         using (var bb0 = new Bitmap(Width, Height)) { DrawToBitmap(bb0, new Rectangle(0, 0, Width, Height)); bb0.Save(Path.Combine(folder, "blocked.png")); }
         _blockedList.Items.Clear(); ShowBlockedList(0);
         // the warning banner, with sample text (this snapshot only; the real one follows the engine)

@@ -8,6 +8,16 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-05
+
+### Added
+- **Update from inside the app.** The app looks for a newer release when it starts (after a minute) and once a day, and shows an **Update** button on the dashboard, an *Update To x.y.z* entry in the tray menu and one pop-up per version. **Update Now** (Settings, About) does the same. It downloads the installer from the release, checks it against the release's SHA-256 file (a damaged download is thrown away), and runs it quietly: the installer closes the app the normal way (network settings put back), upgrades it in place and starts the new version. Nothing is ever installed without your click, prereleases are never offered, and your sign-in setting is kept.
+- Setting *Check For Updates Automatically* (Settings, About), on by default. Turn it off and the app only looks when you click *Check For Updates*. The check reads GitHub's public release information and sends nothing about you. The checksum catches a damaged download; it is not a signature.
+
+### Changed
+- The installer starts the app again by itself after a silent (in-app) update.
+- **One table for Blocked and Allowed.** The separate *Allowed For Now* card is gone: programs you unblocked stay in the *Blocked* table with a countdown (Status: *Allowed, watched in 9:42*), next to the blocked ones (Status: *Blocked 3 min*). *Unblock* and *Unblock All* act on blocked rows, *Block* and *Watch* on allowed rows. The dashboard no longer changes height when you unblock something.
+
 ## [0.3.0] - 2026-11-05
 
 This release stops the app from trusting an adapter to be "the backup": **the role now belongs to the network.** It came from a real mistake: a PC with both adapters on a phone's hotspot used several GB of mobile data on what the app believed was the main connection.

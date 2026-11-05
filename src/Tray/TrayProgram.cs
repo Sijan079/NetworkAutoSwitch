@@ -141,6 +141,7 @@ sealed class TrayContext : ApplicationContext
             catch (Exception e) { Paths.AppendLog("ENGINE CRASHED: " + e); _ui.BeginInvoke(() => Notify("Stopped: " + e.Message, ToolTipIcon.Error)); }
         });
         StartQuitListener(dryRun);
+        StartUpdateChecks(dryRun);
         Application.ApplicationExit += (_, _) => Stop();
         Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => Stop();
         // "Follow System": when Windows switches between light and dark, follow it
@@ -159,7 +160,65 @@ sealed class TrayContext : ApplicationContext
         var old = _icon.ContextMenuStrip; _icon.ContextMenuStrip = BuildMenu(); old?.Dispose();
     }
 
-    MainForm NewWindow() => new(_engine, TogglePause, SetThemeMode, () => _mode, () => _mute, SetMute);
+    MainForm NewWindow()
+    {
+        var w = new MainForm(_engine, TogglePause, SetThemeMode, () => _mode, () => _mute, SetMute);
+        w.InstallUpdate = () => _ = InstallUpdateAsync();
+        w.UpdateChecked = r => FoundUpdate(r, announce: false);
+        w.SetUpdate(_update);
+        return w;
+    }
+
+    // ---------- updates: look at start and once a day, show an Update button, install only when asked ----------
+    UpdateResult? _update; string _announced = ""; bool _installing;
+
+    /// <summary>Keeps the newest release found and tells the window and the tray menu. A pop-up (once per version) only for the automatic check.</summary>
+    void FoundUpdate(UpdateResult r, bool announce)
+    {
+        if (_stopping) return;
+        _update = r.State == UpdateState.Available ? r : null;
+        _window?.SetUpdate(_update);
+        RebuildMenu();
+        if (announce && _update is not null && _announced != _update.Latest)
+        {
+            _announced = _update.Latest;
+            Paths.AppendLog($"update: version {_update.Latest} is available");
+            Notify($"Version {_update.Latest} is available. Open the dashboard and click Update.", ToolTipIcon.Info);
+        }
+    }
+
+    /// <summary>First check a minute after start (the connections settle first), then every 24 hours. Off when the setting says so.</summary>
+    void StartUpdateChecks(bool dryRun)
+    {
+        if (dryRun) return;
+        var t = new System.Windows.Forms.Timer { Interval = 60_000 };
+        t.Tick += async (_, _) =>
+        {
+            t.Interval = 24 * 3600 * 1000;
+            if (_stopping || _installing || !AppSettings.Load().CheckForUpdates) return;
+            var r = await UpdateCheck.CheckAsync(AppInfo.Version);
+            if (r.State == UpdateState.Failed) Paths.AppendLog("update check: " + r.Message);
+            else FoundUpdate(r, announce: true);
+        };
+        t.Start();
+    }
+
+    async Task InstallUpdateAsync()
+    {
+        if (_installing || _update is null || _stopping) return;
+        _installing = true;
+        var u = _update;
+        try
+        {
+            void Say(string m) { if (!_stopping) _ui.BeginInvoke(() => _window?.SetUpdateProgress(m, false)); }
+            Say("Downloading...");
+            var (file, error) = await Updater.DownloadAsync(u, Say);
+            if (file is null) { Paths.AppendLog("update: " + error); _window?.SetUpdateProgress(error ?? "Update failed.", true); return; }
+            Say("Installing " + u.Latest + "... the app restarts by itself.");
+            if (!Updater.Launch(file, StartupTask.IsEnabled(), Paths.AppendLog)) _window?.SetUpdateProgress("Could not start the installer.", true);
+        }
+        finally { _installing = false; }
+    }
 
     bool _mute = AppSettings.Load().MuteNotifications;
     void SetMute(bool on) { _mute = on; try { AppSettings.Update(x => x.MuteNotifications = on); } catch { } }
@@ -238,7 +297,7 @@ sealed class TrayContext : ApplicationContext
             modeMenu,
             new ToolStripMenuItem("Settings", Ui.Glyph(Ui.Settings, 16, Ui.Text), (_, _) => Open("Settings")),
             new ToolStripSeparator(),
-            new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },
+            _update is { } up ? new ToolStripMenuItem($"Update To {up.Latest}...", Ui.Glyph(Ui.Download, 16, Ui.Text), (_, _) => _ = InstallUpdateAsync()) { Font = new Font("Segoe UI Semibold", 9.5f) } : new ToolStripMenuItem($"Version {AppInfo.Version}") { Enabled = false },
             new ToolStripMenuItem("Exit", Ui.Glyph(Ui.Clear, 16, Ui.Text), (_, _) => Quit()),
         });
         foreach (ToolStripItem it in menu.Items) { it.BackColor = Ui.CardBg; it.ForeColor = it.Enabled ? Ui.Text : Ui.Muted; it.Padding = new Padding(4, 5, 4, 5); }

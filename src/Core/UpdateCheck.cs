@@ -5,9 +5,9 @@ namespace NetworkAutoSwitch.Core;
 
 public enum UpdateState { UpToDate, Available, Failed }
 
-public record UpdateResult(UpdateState State, string Latest, string Url, string Message);
+public record UpdateResult(UpdateState State, string Latest, string Url, string Message, string SetupUrl = "", string ShaUrl = "");
 
-/// <summary>"Is there a newer version?" Asks GitHub for the latest release, ONLY when you click the button (the app never phones home by itself).
+/// <summary>"Is there a newer version?" Asks GitHub for the latest release (at start and once a day, unless turned off in Settings, or when you click the button).
 /// Parsing and comparing are pure and tested; only <see cref="CheckAsync"/> touches the network.</summary>
 public static class UpdateCheck
 {
@@ -30,13 +30,16 @@ public static class UpdateCheck
         catch { return null; }
     }
 
+    static (string Setup, string Sha)? ParseAssets(string json, string version) => Updater.ParseAssets(json, version);
+
     /// <summary>Decides what to tell the user, given the running version and GitHub's answer.</summary>
     public static UpdateResult Decide(string current, string? json)
     {
         var latest = json is null ? null : ParseLatest(json);
         if (latest is null) return new(UpdateState.Failed, "", ReleasesPage, "Could not read the answer from GitHub.");
+        var assets = ParseAssets(json!, latest.Value.Version);
         return AppInfo.Compare(latest.Value.Version, current) > 0
-            ? new(UpdateState.Available, latest.Value.Version, latest.Value.Url, $"Version {latest.Value.Version} is available.")
+            ? new(UpdateState.Available, latest.Value.Version, latest.Value.Url, $"Version {latest.Value.Version} is available.", assets?.Setup ?? "", assets?.Sha ?? "")
             : new(UpdateState.UpToDate, latest.Value.Version, latest.Value.Url, "You have the latest version.");
     }
 

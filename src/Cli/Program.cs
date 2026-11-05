@@ -284,6 +284,21 @@ static class SelfTest
             Check("update: 0.10.0 is newer than 0.9.0", UpdateCheck.Decide("0.9.0", rel.Replace("0.2.0", "0.10.0")).State == UpdateState.Available);
             Check("update: nonsense is a failure, not a crash", UpdateCheck.Decide("0.1.0", "not json").State == UpdateState.Failed && UpdateCheck.Decide("0.1.0", "{\"tag_name\":\"latest\"}").State == UpdateState.Failed && UpdateCheck.Decide("0.1.0", null).State == UpdateState.Failed);
             Check("update: a link that is not https is replaced by the releases page", UpdateCheck.ParseLatest("{\"tag_name\":\"v1.0.0\",\"html_url\":\"javascript:alert(1)\"}") is ("1.0.0", var safe) && safe == UpdateCheck.ReleasesPage);
+
+            // ---- installing it: only the real installer + checksum of this project's release are accepted ----
+            string D = "https://github.com/Sijan079/NetworkAutoSwitch/releases/download/v0.4.0/";
+            string full = "{\"tag_name\":\"v0.4.0\",\"assets\":[{\"name\":\"NetworkAutoSwitch-Setup-0.4.0.exe\",\"browser_download_url\":\"" + D + "NetworkAutoSwitch-Setup-0.4.0.exe\"},{\"name\":\"NetworkAutoSwitch-Setup-0.4.0.exe.sha256\",\"browser_download_url\":\"" + D + "NetworkAutoSwitch-Setup-0.4.0.exe.sha256\"}]}";
+            var up = UpdateCheck.Decide("0.3.0", full);
+            Check("update: a release with installer and checksum can be installed", up.State == UpdateState.Available && up.SetupUrl.EndsWith("Setup-0.4.0.exe") && up.ShaUrl.EndsWith(".sha256"));
+            Check("update: without the checksum file it cannot be installed (only offered)", UpdateCheck.Decide("0.3.0", full.Replace("Setup-0.4.0.exe.sha256\",\"browser", "other.txt\",\"browser")).SetupUrl.Length == 0);
+            Check("update: a download link outside this project's releases is ignored", UpdateCheck.Decide("0.3.0", full.Replace("github.com/Sijan079", "evil.example/Sijan079")).SetupUrl.Length == 0);
+            Check("update: an installer of another version is ignored", UpdateCheck.Decide("0.3.0", full.Replace("\"name\":\"NetworkAutoSwitch-Setup-0.4.0.exe\"", "\"name\":\"NetworkAutoSwitch-Setup-0.3.9.exe\"")).SetupUrl.Length == 0);
+            string h = new string('a', 64);
+            Check("update: reads the hash from 'hash  filename'", Updater.ParseHash(h.ToUpper() + "  NetworkAutoSwitch-Setup-0.4.0.exe\r\n") == h && Updater.ParseHash("not a hash") is null && Updater.ParseHash(h + "ff") is null);
+            string tf = Path.GetTempFileName(); File.WriteAllText(tf, "hello");
+            Check("update: the file hash is SHA-256", Updater.HashOf(tf) == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+            File.Delete(tf);
+            Check("update: the quiet install keeps the sign-in setting as it is", Updater.InstallerArgs(true).Contains("/MERGETASKS=\"startup\"") && Updater.InstallerArgs(false).Contains("/MERGETASKS=\"!startup\"") && Updater.InstallerArgs(true).Contains("/VERYSILENT"));
         }
         // ---- start when I sign in ----
         {
