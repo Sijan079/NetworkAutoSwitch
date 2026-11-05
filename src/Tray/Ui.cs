@@ -459,10 +459,11 @@ sealed class AdapterCard : Card
     /// <summary>Loading placeholders that match the layout: four lines on the left (the right side stays quiet).</summary>
     public static readonly (float W, int H)[] Bars = { (0.45f, 18), (0.28f, 12), (0.40f, 12), (0.30f, 12) };
 
-    static Label Line(float size, bool bold, Color color, int height) => new() { Dock = DockStyle.Top, Height = height, AutoEllipsis = true, ForeColor = color, Font = Ui.UiFont(size, bold: bold), BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft };
+    static int Fit(float pt, bool bold, int pad) { using var f = Ui.UiFont(pt, bold); return f.Height + pad; }       // a line is as tall as its text needs, whatever the font size or display scaling
+    static Label Line(float size, bool bold, Color color, int height) => new() { Dock = DockStyle.Top, Height = Math.Max(height, Fit(size, bold, 6)), AutoEllipsis = true, ForeColor = color, Font = Ui.UiFont(size, bold: bold), BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft };
     readonly Label _net = Line(12f, true, Ui.Text, 28), _adapter = Line(10f, false, Ui.Muted, 22), _avg = Line(10f, false, Ui.Muted, 22), _up = Line(10f, false, Ui.Muted, 22);
-    readonly Label _ms = new() { Dock = DockStyle.Top, Height = 54, Font = Ui.UiFont(28f, bold: true), TextAlign = ContentAlignment.BottomCenter, BackColor = Ui.CardBg, Text = "..." };
-    readonly Label _unit = new() { Dock = DockStyle.Top, Height = 26, Font = Ui.UiFont(11f), ForeColor = Ui.Muted, TextAlign = ContentAlignment.TopCenter, BackColor = Ui.CardBg };
+    readonly Label _ms = new() { Dock = DockStyle.Top, Height = Math.Max(54, Fit(28f, true, 8)), Font = Ui.UiFont(28f, bold: true), TextAlign = ContentAlignment.BottomCenter, BackColor = Ui.CardBg, Text = "..." };
+    readonly Label _unit = new() { Dock = DockStyle.Top, Height = Math.Max(26, Fit(11f, false, 6)), Font = Ui.UiFont(11f), ForeColor = Ui.Muted, TextAlign = ContentAlignment.TopCenter, BackColor = Ui.CardBg };
 
     public AdapterCard(string glyph, string title) : base(glyph, title)
     {

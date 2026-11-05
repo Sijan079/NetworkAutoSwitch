@@ -20,6 +20,8 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 - A *MAIN IS PHONE* badge on the Dashboard while the main connection is protected.
 
 ### Changed
+- **The dashboard and the Settings page scroll without a scrollbar**: with the mouse wheel (anywhere over the page, except over a list that has more rows to scroll), a touchpad, or PageUp / PageDown / Home / End. A window that is too small now slides the content instead of squeezing it.
+- The four *Session* tiles share the card's height equally, each centered in its slot.
 - **Dashboard layout**: *Session* is a narrow card (a quarter of the width) as high as the two cards beside it; *Network Activity* sits above *Blocked*, and Blocked is now always on the dashboard (with a short note while nothing is blocked). *Backup Data Today* reads like "1.31 GB / 10 GB" so it fits.
 - **A loud warning when your main connection is your phone.** A red banner appears under the status row ("Main connection is on SNcial, a backup network. Mobile data may be in use.") with a *Choose Connections* button, and a tray pop-up that **ignores the mute setting** appears. The same goes for both connections being on one network. A network that is only "not sorted yet" or "not identified yet" gets an amber banner and no pop-up.
 - **Dashboard connection cards**: network name, adapter, average ping and uptime on the left; the current ping on the right with "ms" below the number. A connection that does not answer shows a red dash and nothing below it, instead of "Down".
@@ -30,6 +32,7 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 - When both adapters are on one network, or the main connection is on a backup network, the engine now protects the main connection's adapter too (rules, watchdog, block rules and data count cover every protected adapter).
 
 ### Fixed
+- **Text cut off in the Session card and the connection cards** (small windows, other font sizes or display scaling): the Session numbers are now placed from the real size of their text, and a long number shrinks to fit; the lines on the connection cards are as tall as their text needs.
 - **The download watchdog no longer drops data from programs it cannot name.** The program of a busy process is now found the way Windows' own task tools find it (it also works for protected processes, such as game anti-cheat), a failed lookup is retried after 5 seconds instead of being remembered for good, and when data still comes from a program that cannot be named, the log says so ("WARNING: ... MB came in ... from programs Windows would not name").
 - **A network Windows has not identified yet is protected**, not trusted: the main connection is protected until Windows names it, and the app rechecks every 2 seconds (it used to wait up to 30 seconds with no protection). If Windows gives no names at all, the app says so once.
 - The same-network check no longer reports a false alarm when the router's hardware address cannot be read and the two networks have different names. The lookup is also tried twice.

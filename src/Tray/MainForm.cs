@@ -50,7 +50,8 @@ sealed class MainForm : Form
     bool _allowedShown;
     string _sortKey = "total"; bool _sortFlip;
     static readonly string[] UsageKeys = { "program", "total", "backup", "trigger", "watch" };      // the sort key of each Network Activity column, left to right
-    Panel? _dashPage;
+    ScrollSurface? _dashPage;
+    readonly WheelRouter _wheel = new();
     readonly Panel _warnBar = new() { Dock = DockStyle.Fill, Padding = new Padding(16, 0, 8, 0), Visible = false, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
     readonly Label _warnText = new() { Dock = DockStyle.Fill, ForeColor = Color.White, BackColor = Color.Transparent, Font = Ui.UiFont(10f, bold: true), TextAlign = ContentAlignment.MiddleLeft };
     // programs you unblocked: countdown until the watchdog watches them again
@@ -109,6 +110,7 @@ sealed class MainForm : Form
         _loadingTimeout.Tick += (_, _) => SetLoading(false);       // never leave placeholders up for good, whatever happens
         _refresh.Tick += (_, _) => RefreshUsage();
         _refresh.Start();
+        Application.AddMessageFilter(_wheel);
         _editor.Connect(() => _engine.Usage.Seen(), (text, error) => Say(text, error));
         LoadLogTail(); LoadPolicy();
         Ui.SkinForm(this);
@@ -118,7 +120,9 @@ sealed class MainForm : Form
     void OnUi(Action a) { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
 
     /// <summary>Stops listening to the engine, so this window can be discarded (used when the theme changes).</summary>
-    public void Detach() { _engine.Status -= _statusHandler; _engine.AdaptersChanged -= _adaptersHandler; _engine.Busy -= _busyHandler; _refresh.Stop(); _loadingTimeout.Stop(); }
+    protected override void Dispose(bool disposing) { if (disposing) Application.RemoveMessageFilter(_wheel); base.Dispose(disposing); }
+
+    public void Detach() { Application.RemoveMessageFilter(_wheel); _engine.Status -= _statusHandler; _engine.AdaptersChanged -= _adaptersHandler; _engine.Busy -= _busyHandler; _refresh.Stop(); _loadingTimeout.Stop(); }
 
     // ---------- loading placeholders ----------
     static readonly (float W, int H)[] ChartBars = { (1f, 14), (0.7f, 14), (0.9f, 14), (0.55f, 14) };
@@ -154,10 +158,11 @@ sealed class MainForm : Form
     // ---------- Dashboard ----------
     Control DashboardPage()
     {
-        var page = Page();
+        var page = new ScrollSurface();                                       // no scrollbar: the wheel, a touchpad and PageUp / PageDown scroll it
+        var pad = Page().Padding; page.Content.Padding = pad;
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = Ui.Bg };
         _grid = grid;
-        _dashPage = page; page.AutoScroll = true; FitDashboardHeight();      // a small window scrolls instead of squeezing the cards
+        _dashPage = page; FitDashboardHeight();      // a small window scrolls instead of squeezing the cards
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));                 // 0  status
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));                  // 1  warning banner: height 0 until the main connection is a backup network (or both are one network)
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));                // 2  the two connection cards
@@ -171,7 +176,7 @@ sealed class MainForm : Form
         top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _dryBadge.Visible = !_engine.Live;
         Ui.Tip.SetToolTip(_dryBadge, "Dry-run: nothing is changed on this PC.");
-        _modeBtn = Ui.Btn(Ui.Swap, ModeLabel(_engine.ConnMode), "How the app switches: automatically, or locked to one connection.", () => { });
+        _modeBtn = Ui.Btn(Ui.Swap, ModeButtonLabel(_engine.ConnMode), "How the app switches: automatically, or locked to one connection.", () => { });
         _modeBtn.Margin = new Padding(0, 0, 8, 0);
         _modeBtn.Click += (_, _) => ModeMenu().Show(_modeBtn, new Point(0, _modeBtn.Height));
         Ui.Tip.SetToolTip(_lockBadge, "Automatic switching is off. The app stays on the connection you chose.");
@@ -233,7 +238,6 @@ sealed class MainForm : Form
         var statsCard = new Card(Ui.Swap, "Session");
         _sessionTiles = new[] { Tile(Ui.Swap, _stSwitches, "Switches"), Tile(Ui.Clock, _stOnBackup, "On Backup"), Tile(Ui.Check, _stLast, "Last Switch"), Tile(Ui.Download, _stData, "Backup Data Today") };
         statsCard.Body.Controls.Add(_tilesGrid);
-        _stData.Font = Ui.UiFont(12.5f, bold: true);       // "1.33 GB / 10 GB" is longer than the other numbers
         LayoutTiles();
         _bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25)); _bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 75));
         _bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); _bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, BlockedRowHeight));
@@ -243,8 +247,16 @@ sealed class MainForm : Form
         Ui.StyleList(_usage, UsageSortState);
         _usage.ColumnClick += (_, e) => SortByColumn(e.Column);
         _usage.ShowItemToolTips = true;
-        _usage.Columns.Add("Program", 196); _usage.Columns.Add("Total", 100, HorizontalAlignment.Right); _usage.Columns.Add("On Backup", 140, HorizontalAlignment.Right);
-        _usage.Columns.Add("Trigger", 100, HorizontalAlignment.Right); _usage.Columns.Add("Watch List", 100);
+        _usage.Columns.Add("Program", 196); _usage.Columns.Add("Total", 104, HorizontalAlignment.Right); _usage.Columns.Add("On Backup", 140, HorizontalAlignment.Right);
+        _usage.Columns.Add("Trigger", 108, HorizontalAlignment.Right); _usage.Columns.Add("Watch List", 112);
+        // the number columns keep their size; the program name gives way first in a narrow window, and Watch List takes what is left (so nothing is pushed out of view)
+        _usage.Resize += (_, _) =>
+        {
+            int w = _usage.ClientSize.Width; if (w < 300) return;
+            int numbers = _usage.Columns[1].Width + _usage.Columns[2].Width + _usage.Columns[3].Width;
+            _usage.Columns[0].Width = Math.Max(100, w - numbers - 112);
+            _usage.Columns[4].Width = Math.Max(112, w - numbers - _usage.Columns[0].Width);
+        };
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, BackColor = Ui.CardBg, Padding = new Padding(0, Ui.Gap, 0, 0) };
         actions.Controls.Add(Ui.Btn(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary));
         actions.Controls.Add(Ui.Btn(Ui.Refresh, "Reset", "Reset the counters.", () => { _engine.Usage.Reset(); RefreshUsage(); }));
@@ -257,7 +269,7 @@ sealed class MainForm : Form
         _bottom.Controls.Add(statsCard, 0, 0); _bottom.SetRowSpan(statsCard, 2);
         _bottom.Controls.Add(usageCard, 1, 0); _bottom.Controls.Add(_blockedCard, 1, 1);
         grid.Controls.Add(_allowedCard, 0, 4); grid.Controls.Add(_bottom, 0, 5);
-        page.Controls.Add(grid);
+        page.Content.Controls.Add(grid);
         return page;
     }
 
@@ -266,7 +278,7 @@ sealed class MainForm : Form
     {
         _cardP.SetIcon(Ui.AdapterGlyph(_engine.PrimaryKind)); _cardB.SetIcon(Ui.AdapterGlyph(_engine.BackupKind));
         _cardP.SetIdentity(_engine.PrimaryNetwork ?? "", _primary); _cardB.SetIdentity(_engine.BackupNetwork ?? "", _backup);
-        _modeBtn.Text = Ui.T(ModeLabel(_engine.ConnMode));
+        _modeBtn.Text = Ui.T(ModeButtonLabel(_engine.ConnMode));
     }
 
     /// <summary>Opens the dialog where you can choose the main and backup adapter yourself (or leave them on Automatic).</summary>
@@ -275,6 +287,9 @@ sealed class MainForm : Form
         using var dlg = new ConnectionsDialog(_engine);
         dlg.ShowDialog(this);
     }
+
+    /// <summary>The button next to the status is short (so the status text keeps its room); the menu entries below it name the network.</summary>
+    static string ModeButtonLabel(ConnectionMode m) => m switch { ConnectionMode.StayPrimary => "Stay On Main", ConnectionMode.StayBackup => "Stay On Backup", _ => "Automatic" };
 
     string ModeLabel(ConnectionMode m) => m switch { ConnectionMode.StayPrimary => $"Stay On {Ui.Role("Main", _engine.PrimaryNetwork, _primary)}", ConnectionMode.StayBackup => $"Stay On {Ui.Role("Backup", _engine.BackupNetwork, _backup)}", _ => "Automatic" };
 
@@ -285,7 +300,7 @@ sealed class MainForm : Form
         foreach (var mode in new[] { ConnectionMode.Auto, ConnectionMode.StayPrimary, ConnectionMode.StayBackup })
         {
             var it = new ToolStripMenuItem(ModeLabel(mode)) { Checked = _engine.ConnMode == mode, BackColor = Ui.CardBg, ForeColor = Ui.Text, Padding = new Padding(4, 6, 4, 6) };
-            it.Click += (_, _) => { _engine.SetConnectionMode(mode); _modeBtn.Text = Ui.T(ModeLabel(mode)); _lockBadge.Visible = mode != ConnectionMode.Auto; };
+            it.Click += (_, _) => { _engine.SetConnectionMode(mode); _modeBtn.Text = Ui.T(ModeButtonLabel(mode)); _lockBadge.Visible = mode != ConnectionMode.Auto; };
             m.Items.Add(it);
         }
         m.Items.Add(new ToolStripSeparator());
@@ -295,15 +310,14 @@ sealed class MainForm : Form
         return m;
     }
 
-    /// <summary>Session tiles: one above the other, at a fixed height each (the card is tall, the tiles stay together at the top).</summary>
+    /// <summary>Session tiles: one above the other, sharing the card's height equally (each is centered in its slot).</summary>
     void LayoutTiles()
     {
         _tilesGrid.SuspendLayout();
         _tilesGrid.Controls.Clear(); _tilesGrid.ColumnStyles.Clear(); _tilesGrid.RowStyles.Clear();
-        _tilesGrid.ColumnCount = 1; _tilesGrid.RowCount = _sessionTiles.Length + 1;
+        _tilesGrid.ColumnCount = 1; _tilesGrid.RowCount = _sessionTiles.Length;
         _tilesGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < _sessionTiles.Length; i++) { _tilesGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 64)); _tilesGrid.Controls.Add(_sessionTiles[i], 0, i); }
-        _tilesGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        for (int i = 0; i < _sessionTiles.Length; i++) { _tilesGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / _sessionTiles.Length)); _tilesGrid.Controls.Add(_sessionTiles[i], 0, i); }
         _tilesGrid.ResumeLayout();
     }
 
@@ -311,7 +325,7 @@ sealed class MainForm : Form
     void FitDashboardHeight()
     {
         if (_dashPage is null) return;
-        _dashPage.AutoScrollMinSize = new Size(0, DashboardMinHeight + (_allowedShown ? AllowedRowHeight : 0));
+        _dashPage.MinContentHeight = DashboardMinHeight + (_allowedShown ? AllowedRowHeight : 0);
     }
 
     /// <summary>Blocked is always on the dashboard: the list while something is blocked, a short note (and idle buttons) while nothing is.</summary>
@@ -325,10 +339,38 @@ sealed class MainForm : Form
     static Control Tile(string glyph, Label value, string caption)
     {
         var p = new Panel { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
-        var icon = new PictureBox { Image = Ui.Glyph(glyph, 22, Ui.Muted), Location = new Point(0, 8), Size = new Size(30, 30), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
-        value.AutoSize = true; value.Font = Ui.UiFont(15f, bold: true); value.Location = new Point(40, 0); value.Text = "-"; value.BackColor = Ui.CardBg; value.ForeColor = Ui.Text;
-        var cap = new Label { Text = caption, AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9f), Location = new Point(42, 28), BackColor = Ui.CardBg };
+        var icon = new PictureBox { Image = Ui.Glyph(glyph, 22, Ui.Muted), Size = new Size(30, 30), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
+        value.AutoSize = true; value.Font = Ui.UiFont(15f, bold: true); value.Text = "-"; value.BackColor = Ui.CardBg; value.ForeColor = Ui.Text; value.Margin = Padding.Empty; value.Padding = Padding.Empty;
+        var cap = new Label { Text = caption, AutoSize = false, AutoEllipsis = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9f), BackColor = Ui.CardBg, Margin = Padding.Empty, Padding = Padding.Empty };
+        bool placing = false;
+        // Everything is placed from the real sizes of the text (whatever the font size or display scaling is), so nothing overlaps or is cut off:
+        // the number shrinks until it fits next to the icon, the caption sits right under it, and the pair is centered in the slot.
+        void Place()
+        {
+            if (placing || p.Width < 80) return;
+            placing = true;
+            try
+            {
+                const int left = 40;
+                int room = Math.Max(30, p.Width - left - 8);
+                float pt = 15f;
+                for (; pt > 9f; pt -= 0.5f)
+                {
+                    using var f = Ui.UiFont(pt, bold: true);
+                    if (TextRenderer.MeasureText(value.Text, f, new Size(int.MaxValue, 200), TextFormatFlags.NoPadding).Width <= room) break;
+                }
+                if (Math.Abs(value.Font.Size - pt) > 0.01f) { var old = value.Font; value.Font = Ui.UiFont(pt, bold: true); old.Dispose(); }
+                var vs = value.GetPreferredSize(Size.Empty); int capH = TextRenderer.MeasureText("Ag", cap.Font).Height; cap.Size = new Size(Math.Max(20, p.Width - left - 10), capH); var cs = cap.Size;
+                int block = vs.Height + cs.Height, top = Math.Max(0, (p.Height - block) / 2);
+                value.Location = new Point(left, top); cap.Location = new Point(left + 2, top + vs.Height);
+                icon.Location = new Point(0, top + (block - icon.Height) / 2);
+            }
+            finally { placing = false; }
+        }
         p.Controls.Add(icon); p.Controls.Add(value); p.Controls.Add(cap);
+        p.Resize += (_, _) => Place();
+        value.TextChanged += (_, _) => Place();
+        Place();
         return p;
     }
 
@@ -375,7 +417,7 @@ sealed class MainForm : Form
         _sameBadge.Visible = _engine.SameNetworkWarning;
         _phoneMainBadge.Visible = _engine.MainProtected && !_engine.SameNetworkWarning;
         UpdateWarning();
-        _lockBadge.Visible = s.Mode != ConnectionMode.Auto; _modeBtn.Text = Ui.T(ModeLabel(s.Mode));
+        _lockBadge.Visible = s.Mode != ConnectionMode.Auto; _modeBtn.Text = Ui.T(ModeButtonLabel(s.Mode));
 
         var st = _engine.Stats;
         Color? inUse = s.Paused || !anyOk ? null : s.Active == Active.Primary ? Ui.Green : Ui.Amber;
@@ -793,8 +835,8 @@ sealed class MainForm : Form
 
         foreach (var c in new Control[] { appearance, switching, notes, startup, data, logCard, about }) c.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
         grid.Controls.Add(appearance, 0, 0); grid.Controls.Add(switching, 0, 1); grid.Controls.Add(notes, 0, 2); grid.Controls.Add(startup, 0, 3); grid.Controls.Add(data, 0, 4); grid.Controls.Add(logCard, 0, 5); grid.Controls.Add(_global, 0, 6); grid.Controls.Add(about, 0, 7);
-        var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Ui.Bg };
-        scroll.Controls.Add(grid);
+        var scroll = new ScrollSurface { MinContentHeight = heights.Sum() };      // the same: no scrollbar, the wheel scrolls it
+        scroll.Content.Controls.Add(grid);
         page.Controls.Add(scroll);
         page.Controls.Add(ActionBar(beforeSave: () => { _engine.SetRecoverSeconds((int)_recover.Value); _engine.SetDailyCapMB((int)_cap.Value); _engine.SetBackupCheckSeconds((int)_backupCheck.Value); SetLogLines((int)_logLines.Value); }));
         return page;
@@ -851,6 +893,25 @@ sealed class MainForm : Form
         _tabs.Select("dashboard"); SetLoading(true); Application.DoEvents();
         using (var lb = new Bitmap(Width, Height)) { DrawToBitmap(lb, new Rectangle(0, 0, Width, Height)); lb.Save(Path.Combine(folder, "loading.png")); }
         SetLoading(false);
+        // the smallest window the app allows: nothing may be cut off here either
+        { int w0 = Width, h0 = Height; Width = MinimumSize.Width; Height = MinimumSize.Height; _tabs.Select("dashboard"); Application.DoEvents();
+          using (var sm = new Bitmap(Width, Height)) { DrawToBitmap(sm, new Rectangle(0, 0, Width, Height)); sm.Save(Path.Combine(folder, "small.png")); }
+          _dashPage?.ScrollBy(100000); Application.DoEvents();       // and scrolled to the end, to see the lower cards of the small window
+          using (var sb = new Bitmap(Width, Height)) { DrawToBitmap(sb, new Rectangle(0, 0, Width, Height)); sb.Save(Path.Combine(folder, "small-bottom.png")); }
+          File.WriteAllText(Path.Combine(folder, "small-columns.txt"), $"list client width {_usage.ClientSize.Width}; columns: {string.Join(", ", _usage.Columns.Cast<ColumnHeader>().Select(c => c.Text + "=" + c.Width))}");
+          _dashPage?.ScrollBy(-100000);
+          Width = w0; Height = h0; Application.DoEvents(); }
+        // the scrolling of a page without a scrollbar, checked in code (a small page with taller content)
+        {
+            var ss = new ScrollSurface { Width = 300, Height = 200 }; ss.MinContentHeight = 500;
+            bool scrolled = ss.Wheel(-120); int one = ss.Offset;
+            for (int i = 0; i < 40; i++) ss.Wheel(-120); int bottom = ss.Offset;
+            ss.ScrollBy(-100); int back = ss.Offset;
+            for (int i = 0; i < 40; i++) ss.Wheel(120); int top = ss.Offset;
+            var roomy = new ScrollSurface { Width = 300, Height = 600 }; roomy.MinContentHeight = 500;
+            File.WriteAllText(Path.Combine(folder, "scroll-check.txt"),
+                $"wheel down scrolls: {scrolled}; one notch moves {one} px; bottom stops at {bottom} (max 300); 100 px back = {back}; top stops at {top}; content that fits does not scroll: {!roomy.Wheel(-120)}; content top at bottom = {-bottom}");
+        }
         // the Blocked card beside Session (a sample row; this snapshot only)
         _blockedList.Items.Clear(); _blockedList.Items.Add(new ListViewItem(new[] { @"C:\Program Files (x86)\Steam\steam.exe", "Steam", "3 min" })); _blockedCard.SetTitle("Blocked (1)");
         ShowBlockedList(1); Application.DoEvents();
