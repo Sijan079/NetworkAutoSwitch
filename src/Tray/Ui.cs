@@ -73,7 +73,7 @@ static class Ui
         Refresh = "", OpenFile = "", Save = "", Undo = "", Unlock = "", Lock = "", Swap = "",
         Clock = "", Home = "", Document = "", Settings = "", Download = "", Warning = "",
         Info = "", Chart = "", Data = "", Folder = "", Code = "", Shield = "", Check = "",
-        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "", Phone = "", Moon = "", Monitor = "", Mute = "";
+        Clear = "", Dot = "", Eye = "", Block = "", List = "", Brightness = "", Phone = "", Moon = "", Monitor = "", Mute = "", Speed = "", Up = "";
 
     static readonly string IconFont = PickFont();
     static string PickFont()
@@ -86,6 +86,18 @@ static class Ui
 
     public static Font IconFnt(float px) => new(IconFont, px, FontStyle.Regular, GraphicsUnit.Pixel);
     public static Font UiFont(float pt, bool bold = false) => new(bold ? "Segoe UI Semibold" : "Segoe UI", pt);
+
+    /// <summary>A glyph drawn a little thicker (the icon font only has thin outlines), for small symbols that must be noticed.</summary>
+    public static Bitmap GlyphBold(string g, int px, Color c)
+    {
+        var bmp = new Bitmap(px, px);
+        using var gr = Graphics.FromImage(bmp);
+        gr.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        using var f = IconFnt(px * 0.78f); using var b = new SolidBrush(c);
+        using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        foreach (var (dx, dy) in new[] { (0f, 0f), (0.6f, 0f), (0f, 0.6f), (0.6f, 0.6f) }) gr.DrawString(g, f, b, new RectangleF(dx, dy, px, px), sf);
+        return bmp;
+    }
 
     public static Bitmap Glyph(string g, int px, Color c)
     {
@@ -132,7 +144,7 @@ static class Ui
         var fg = filled ? Color.White : Text;
         var b = new Button
         {
-            FlatStyle = FlatStyle.Flat, BackColor = fill, ForeColor = fg, Image = Glyph(glyph, 18, fg), Text = T(text), Cursor = Cursors.Hand,
+            FlatStyle = FlatStyle.Flat, BackColor = fill, ForeColor = fg, Image = GlyphBold(glyph, 18, fg), Text = T(text), Cursor = Cursors.Hand,
             Height = BtnH, Margin = new Padding(0, 0, 8, 0), UseVisualStyleBackColor = false,
             TextImageRelation = TextImageRelation.ImageBeforeText, ImageAlign = ContentAlignment.MiddleCenter, Font = UiFont(9.5f, bold: filled),
         };
@@ -293,7 +305,7 @@ sealed class TabHost : Panel
     {
         var b = new TabBtn
         {
-            FlatStyle = FlatStyle.Flat, BackColor = Ui.Bg, ForeColor = Ui.Muted, Text = Ui.T(text), Image = Ui.Glyph(glyph, 18, Ui.Muted), Cursor = Cursors.Hand,
+            FlatStyle = FlatStyle.Flat, BackColor = Ui.Bg, ForeColor = Ui.Muted, Text = Ui.T(text), Image = Ui.GlyphBold(glyph, 18, Ui.Muted), Cursor = Cursors.Hand,
             TextImageRelation = TextImageRelation.ImageBeforeText, Height = 42, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Padding = new Padding(14, 0, 16, 4), Margin = new Padding(0, 0, 4, 0), Font = Ui.UiFont(10f), UseVisualStyleBackColor = false,
         };
@@ -382,23 +394,44 @@ class Card : Panel
     public Panel Body { get; } = new() { Dock = DockStyle.Fill, BackColor = Ui.CardBg, Padding = new Padding(Ui.Pad, 6, Ui.Pad, Ui.Gap) };
     readonly FlowLayoutPanel _right = new() { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 4, 8, 0) };
     readonly PictureBox _icon = new() { Width = 22, Height = 22, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
-    readonly Label _title = new() { AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(10f, bold: true), BackColor = Ui.CardBg };
+    readonly Label _title = new() { AutoSize = true, ForeColor = Ui.Text, Font = Ui.UiFont(10f, bold: true), BackColor = Ui.CardBg };
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Color BorderColor { get => _border; set { _border = value; Invalidate(); } }
     Color _border = Ui.Border;
+    /// <summary>The card's own background colour (the connection in use: green on Main, amber on Backup). Null = the normal card colour.</summary>
+    public Color? Fill => _fill;
+    Color? _fill;
+    string _glyph = "";
+
+    /// <summary>Paints the whole card in <paramref name="fill"/> (null = normal). <paramref name="soft"/> colours the title and icons so they read on it.</summary>
+    public void SetFill(Color? fill, Color? soft)
+    {
+        if (_fill == fill) return;
+        _fill = fill;
+        Color bg = fill ?? Ui.CardBg, ink = soft ?? Ui.Muted;
+        void Recolor(Control c) { foreach (Control k in c.Controls) { if (k is Skeleton) continue; k.BackColor = bg; Recolor(k); } }
+        Recolor(this);
+        _title.ForeColor = fill is null ? Ui.Text : Color.White;
+        _icon.Image = Ui.GlyphBold(_glyph, 20, fill is null ? Ui.Text : Color.White);
+        if (_hint is not null) _hint.Image = Ui.GlyphBold(Ui.Info, 16, ink);
+        Invalidate(true);
+    }
+    bool _glow;
+    const int Radius = 10, Inset = 4;       // rounded corners; the content sits Inset px in, so it never covers the curve
 
     public Card(string glyph, string title)
     {
-        BackColor = Ui.CardBg; Padding = new Padding(1); Margin = new Padding(0, 0, Ui.Gap, Ui.Gap); Dock = DockStyle.Fill;
-        _icon.Image = Ui.Glyph(glyph, 18, Ui.Muted); _title.Text = Ui.T(title);
-        var head = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = Ui.CardBg };
+        BackColor = Ui.CardBg; Padding = new Padding(Inset); Margin = new Padding(0, 0, Ui.Gap, Ui.Gap); Dock = DockStyle.Fill;
+        _glyph = glyph; _icon.Image = Ui.GlyphBold(glyph, 20, Ui.Text); _title.Text = Ui.T(title);
+        var head = _head = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = Ui.CardBg };
         _icon.Location = new Point(Ui.Pad, 10); _title.Location = new Point(Ui.Pad + 30, 11);
+        _title.SizeChanged += (_, _) => PlaceHint();       // the info icon follows the end of the title
         head.Controls.Add(_right); head.Controls.Add(_icon); head.Controls.Add(_title);
         Controls.Add(Body); Controls.Add(head);
     }
 
     public void SetTitle(string t) => _title.Text = Ui.T(t);
-    public void SetIcon(string glyph) => _icon.Image = Ui.Glyph(glyph, 18, Ui.Muted);
+    public void SetIcon(string glyph) { _glyph = glyph; _icon.Image = Ui.GlyphBold(glyph, 20, _fill is null ? Ui.Text : Color.White); }
 
     // ---- loading placeholders: grey bars with a moving shine, shown while the content is being changed ----
     Skeleton? _skel; readonly List<Control> _hidden = new();
@@ -438,24 +471,60 @@ class Card : Panel
         _right.Controls.Add(b);
     }
 
+    Panel? _head; PictureBox? _hint;
+
+    /// <summary>The (i) icon sits right after the title; its tooltip explains the card.</summary>
     public void SetHint(string tip)
     {
-        var i = new PictureBox { Image = Ui.Glyph(Ui.Info, 18, Ui.Muted), Width = 30, Height = 32, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Cursor = Cursors.Help };
-        Ui.Tip.SetToolTip(i, tip); _right.Controls.Add(i);
+        if (_hint is null)
+        {
+            _hint = new PictureBox { Image = Ui.GlyphBold(Ui.Info, 16, Ui.Muted), Width = 24, Height = 24, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Cursor = Cursors.Help };
+            _head!.Controls.Add(_hint); PlaceHint();
+        }
+        Ui.Tip.SetToolTip(_hint, tip);
+    }
+
+    // centred on the title line (the same middle as the card icon and the title text)
+    void PlaceHint() { if (_hint is not null) _hint.Location = new Point(_title.Right + 2, _title.Top + (_title.Height - _hint.Height) / 2); }
+
+    static System.Drawing.Drawing2D.GraphicsPath Rounded(RectangleF r, float rad)
+    {
+        var p = new System.Drawing.Drawing2D.GraphicsPath(); float d = rad * 2;
+        p.AddArc(r.Left, r.Top, d, d, 180, 90); p.AddArc(r.Right - d, r.Top, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure(); return p;
+    }
+
+    protected override void OnResize(EventArgs e) { base.OnResize(e); Invalidate(); }
+
+    /// <summary>Rounded card: the corners outside the curve show the page behind it; the edge is drawn smooth.</summary>
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Parent?.BackColor ?? Ui.Bg);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var path = Rounded(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius);
+        using (var fill = new SolidBrush(_fill ?? Ui.CardBg)) g.FillPath(fill, path);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        var g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        if (_fill is not null) return;        // a filled card needs no outline
+        using var path = Rounded(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius);
         using var p = new Pen(_border, _border == Ui.Border ? 1f : 2f);
-        e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
+        g.DrawPath(p, path);
     }
 }
 
 /// <summary>One connection on the dashboard. Left: network name, adapter, average ping, uptime. Right: the current ping, number on top and "ms" below it.
-/// The border color marks the connection in use.</summary>
+/// The card of the connection in use is filled with its role colour.</summary>
 sealed class AdapterCard : Card
 {
+    static Color Blend(Color a, Color b, float t) => Color.FromArgb((int)(a.R * t + b.R * (1 - t)), (int)(a.G * t + b.G * (1 - t)), (int)(a.B * t + b.B * (1 - t)));
+
     /// <summary>Loading placeholders that match the layout: four lines on the left (the right side stays quiet).</summary>
     public static readonly (float W, int H)[] Bars = { (0.45f, 18), (0.28f, 12), (0.40f, 12), (0.30f, 12) };
 
@@ -465,12 +534,26 @@ sealed class AdapterCard : Card
     readonly Label _ms = new() { Dock = DockStyle.Top, Height = Math.Max(54, Fit(28f, true, 8)), Font = Ui.UiFont(28f, bold: true), TextAlign = ContentAlignment.BottomCenter, BackColor = Ui.CardBg, Text = "..." };
     readonly Label _unit = new() { Dock = DockStyle.Top, Height = Math.Max(26, Fit(11f, false, 6)), Font = Ui.UiFont(11f), ForeColor = Ui.Muted, TextAlign = ContentAlignment.TopCenter, BackColor = Ui.CardBg };
 
+    // a symbol in front of the average ping and the uptime, instead of the words
+    readonly PictureBox _avgIcon = new() { Dock = DockStyle.Left, Width = 30, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Image = Ui.GlyphBold(Ui.Speed, 22, Ui.Muted) };
+    readonly PictureBox _upIcon = new() { Dock = DockStyle.Left, Width = 30, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Image = Ui.GlyphBold(Ui.Up, 22, Ui.Muted) };
+    Color _iconInk = Ui.Muted;
+    static Panel Row(Label text, PictureBox icon)
+    {
+        var p = new Panel { Dock = DockStyle.Top, Height = text.Height, BackColor = Ui.CardBg };
+        text.Dock = DockStyle.Fill; p.Controls.Add(text); p.Controls.Add(icon);
+        return p;
+    }
+    void InkIcons(Color c) { if (c == _iconInk) return; _iconInk = c; _avgIcon.Image = Ui.GlyphBold(Ui.Speed, 22, c); _upIcon.Image = Ui.GlyphBold(Ui.Up, 22, c); }
+
     public AdapterCard(string glyph, string title) : base(glyph, title)
     {
         var right = new Panel { Dock = DockStyle.Right, Width = 104, BackColor = Ui.CardBg };
         right.Controls.Add(_unit); right.Controls.Add(_ms);                       // docked to the top: the last added is the first shown
         var left = new Panel { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
-        left.Controls.Add(_up); left.Controls.Add(_avg); left.Controls.Add(_adapter); left.Controls.Add(_net);
+        left.Controls.Add(Row(_up, _upIcon)); left.Controls.Add(Row(_avg, _avgIcon)); left.Controls.Add(_adapter); left.Controls.Add(_net);
+        Ui.Tip.SetToolTip(_avg, "Average ping"); Ui.Tip.SetToolTip(_avgIcon, "Average ping");
+        Ui.Tip.SetToolTip(_up, "Uptime: the share of checks that got an answer"); Ui.Tip.SetToolTip(_upIcon, "Uptime: the share of checks that got an answer");
         Body.Controls.Add(left); Body.Controls.Add(right);
     }
 
@@ -481,7 +564,7 @@ sealed class AdapterCard : Card
     {
         _known = network.Length > 0;
         _net.Text = _known ? network : "Unknown network";
-        _net.ForeColor = _known && _selected ? Ui.Text : Ui.Muted;
+        _net.ForeColor = Fill is not null ? Color.White : _known ? Ui.Text : Ui.Muted;
         _adapter.Text = adapter;
     }
 
@@ -490,11 +573,24 @@ sealed class AdapterCard : Card
     public void Show(ProbeResult r, double uptimePct, int? avgMs, Color? inUse, bool selected)
     {
         _selected = selected;
-        _net.ForeColor = _known && selected ? Ui.Text : Ui.Muted;
-        _avg.Text = $"Average ping  \u00b7  {(avgMs is int a ? a + " ms" : "-")}";
-        _up.Text = $"Uptime  \u00b7  {uptimePct:0.#}%";
-        if (r.Healthy) { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = r.Ms.ToString(); _ms.ForeColor = selected ? Ui.Green : Ui.Muted; _unit.Text = "ms"; Ui.Tip.SetToolTip(_ms, ""); }
-        else { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = "\u2014"; _ms.ForeColor = selected ? Ui.Red : Ui.Muted; _unit.Text = ""; Ui.Tip.SetToolTip(_ms, r.Detail); }   // a ping has no number when nothing answers: 0 would read as "perfect"
-        BorderColor = inUse ?? Ui.Border;
+        _net.ForeColor = _known ? Ui.Text : Ui.Muted;
+        _avg.Text = avgMs is int a ? a + " ms" : "-";
+        _up.Text = $"{uptimePct:0.#}%";
+        if (r.Healthy) { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = r.Ms.ToString(); _ms.ForeColor = Ui.Text; _unit.Text = "ms"; Ui.Tip.SetToolTip(_ms, ""); }
+        else { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = "\u2014"; _ms.ForeColor = Ui.Red; _unit.Text = ""; Ui.Tip.SetToolTip(_ms, r.Detail); }   // a ping has no number when nothing answers: 0 would read as "perfect"
+        // the connection in use is painted in its role colour (green = Main, amber = Backup), with white text on it
+        Color? fill = inUse is Color u ? (u == Ui.Green ? Ui.GreenFill : Ui.AmberFill) : null;
+        if (fill is Color f)
+        {
+            Color soft = Blend(Color.White, f, 0.8f);
+            SetFill(f, soft);
+            _net.ForeColor = Color.White; _ms.ForeColor = Color.White;
+            _adapter.ForeColor = _avg.ForeColor = _up.ForeColor = _unit.ForeColor = soft; InkIcons(Color.White);
+        }
+        else
+        {
+            SetFill(null, null);
+            _adapter.ForeColor = _avg.ForeColor = _up.ForeColor = _unit.ForeColor = Ui.Muted; InkIcons(Ui.Text);
+        }
     }
 }

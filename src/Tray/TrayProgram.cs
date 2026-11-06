@@ -117,11 +117,11 @@ sealed class TrayContext : ApplicationContext
         _engine.SameNetworkChanged += same => { if (same && !_stopping) _ui.BeginInvoke(() => NotifyAlways("Your main and backup connections are on the same network. If it fails, you have no backup.", ToolTipIcon.Warning)); };
         _engine.MainProtectionChanged += on => { if (on && _engine.MainProtectionAlarm && !_stopping) _ui.BeginInvoke(() => NotifyAlways("Your main connection is on a backup network (your phone?). Mobile data may be in use. Open the dashboard to fix it.", ToolTipIcon.Warning)); };
         _engine.NetworkNeedsLabel += net => { if (!_stopping) _ui.BeginInvoke(() => AskNetworkRole(net)); };
-        _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning)); };
+        _engine.WatchdogBlocked += a => { if (!_stopping) _ui.BeginInvoke(() => Notify($"{a.Rule} was downloading, so it is blocked on the backup. Click here to unblock it.", ToolTipIcon.Warning, "Activity")); };
         // the daily data cap on the backup: a pop-up at 80 % and when it is reached (muted pop-ups are still in the log)
         _engine.BudgetAlert += (level, used, cap) => { if (!_stopping) _ui.BeginInvoke(() => Notify(level == BudgetLevel.Reached
             ? $"Daily data limit reached: {used / 1e6:0} MB of {cap / 1e6:0} MB used on {_backup} today." : $"{used / 1e6:0} MB of your {cap / 1e6:0} MB daily limit used on {_backup} today.", level == BudgetLevel.Reached ? ToolTipIcon.Warning : ToolTipIcon.Info)); };
-        _icon.BalloonTipClicked += (_, _) => Open("Log");
+        _icon.BalloonTipClicked += (_, _) => Open(_balloonPage);
         TrayProgram.OnCrash = msg => { if (!_stopping) _ui.BeginInvoke(() => Notify(msg, ToolTipIcon.Error)); };
         if (showWindow) Open("Dashboard");
         if (!dryRun && AppSettings.Load().Welcomed == false) ShowWelcomeSoon();
@@ -284,7 +284,7 @@ sealed class TrayContext : ApplicationContext
         foreach (var (m, text) in new[] { (ConnectionMode.Auto, "Automatic"), (ConnectionMode.StayPrimary, $"Stay On {Ui.Role("Main", _engine.PrimaryNetwork, _primary)}"), (ConnectionMode.StayBackup, $"Stay On {Ui.Role("Backup", _engine.BackupNetwork, _backup)}") })
             modeMenu.DropDownItems.Add(new ToolStripMenuItem(text, null, (_, _) => _engine.SetConnectionMode(m)) { Checked = _engine.ConnMode == m });
         modeMenu.DropDownItems.Add(new ToolStripSeparator());
-        modeMenu.DropDownItems.Add(new ToolStripMenuItem("Choose Connections...", null, (_, _) => _window?.ChooseConnections()));
+        modeMenu.DropDownItems.Add(new ToolStripMenuItem("Networks...", null, (_, _) => _window?.ChooseConnections()));
 
         var menu = new ContextMenuStrip { Renderer = new ThemedRenderer(), BackColor = Ui.CardBg, ForeColor = Ui.Text, ShowImageMargin = true, Font = new Font("Segoe UI", 9.5f) };
         menu.Items.AddRange(new ToolStripItem[]
@@ -377,7 +377,8 @@ sealed class TrayContext : ApplicationContext
     /// <summary>For warnings about your data: shown even when you muted notifications (only the snapshot test runs stay silent).</summary>
     void NotifyAlways(string text, ToolTipIcon kind) { if (!_quiet) _icon.ShowBalloonTip(8000, "Network Auto Switch", text, kind); }
 
-    void Notify(string text, ToolTipIcon kind) { if (!_quiet && !_mute) _icon.ShowBalloonTip(4000, "Network Auto Switch", text, kind); }
+    string _balloonPage = "Log";      // where a click on the pop-up goes
+    void Notify(string text, ToolTipIcon kind, string page = "Log") { if (!_quiet && !_mute) { _balloonPage = page; _icon.ShowBalloonTip(4000, "Network Auto Switch", text, kind); } }
 
     /// <summary>Stops the engine and waits (max 20 s) so it can restore metrics and remove rules.</summary>
     void Stop()

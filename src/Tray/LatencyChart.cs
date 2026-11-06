@@ -9,8 +9,8 @@ namespace NetworkAutoSwitch.Tray;
 sealed class LatencyChart : Control
 {
     Sample[] _p = Array.Empty<Sample>(), _b = Array.Empty<Sample>();
-    internal static Color PCol => Ui.Dark ? Color.FromArgb(96, 165, 250) : Color.FromArgb(31, 119, 180);
-    internal static Color BCol => Ui.Dark ? Color.FromArgb(251, 146, 60) : Color.FromArgb(230, 126, 34);
+    internal static Color PCol => Ui.Green;      // Main is green and Backup amber everywhere in the app (status line, cards, chart)
+    internal static Color BCol => Ui.Amber;
 
     public LatencyChart() { DoubleBuffered = true; ResizeRedraw = true; }
 
@@ -20,7 +20,7 @@ sealed class LatencyChart : Control
     {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(BackColor);
-        var r = new Rectangle(46, 10, Width - 60, Height - 28);
+        var r = new Rectangle(46, 10, Width - 48, Height - 28);      // the plot ends at the card's right content edge, like the legend and the tables
         if (r.Width < 40 || r.Height < 30) return;
 
         const int window = 120;   // last ~10 minutes at one probe per 5 s

@@ -8,6 +8,20 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
+### Added
+- **Activity page** (a new tab next to the Dashboard): the full *Network Activity* table (sorting, *Add To Watch List*, *Reset*) and the *Blocked* table (*Unblock*, *Unblock All*, *Block*, *Watch*). Clicking the "is blocked" pop-up opens it.
+
+- **Networks page** (a new tab): the Main and Backup network tables, the unlabelled networks, the Blacklist / Whitelist mode and the adapters (under *Choose adapters myself*), with Save and Revert. It replaces the *Choose Connections* window; the mode menu, the warning banner and the tray menu open it.
+
+### Changed
+- **The dashboard shows both tables read-only**, as a quick look; you act on them on the Activity page.
+- **Rounded cards**, and the card of the connection in use is filled with its role colour (green on Main, amber on Backup) with white text, instead of a coloured border. The average ping and the uptime are shown with a symbol (a gauge and an up arrow; hover for the name) instead of words. Icons are drawn thicker and brighter across the window (card headers, Session, buttons, tabs), so they are easy to see. Text follows one rule: titles, names and numbers are white (the text colour), labels and details are muted. The latency legend names the networks (for example SNcial_5G and SNcial) instead of the adapters, and the chart uses the app's colours: green for Main, amber for Backup. The window opens no bigger than the screen and the whole dashboard fits in it without scrolling (it only scrolls in a window shorter than about 700 px). Dropdowns are drawn in the app's theme (rounded box, chevron, themed list). The *Locked* badge is gone: the mode button already says *Stay On ...*. The (i) icon is centred on the title line.
+- Dashboard alignment: the Session numbers line up with the card titles and their icons with the card icons, the latency plot reaches the same right edge as the legend and the tables, and the Blocked card shows three whole rows.
+- On the Activity page, *Add To Watch List* and *Reset* sit in the card's header, on the right of the title. The (i) info icon of every card now sits right after its title.
+
+### Fixed
+- A white strip in the Network Activity header when a column was dragged narrower. The Watch List column now always takes what is left.
+
 ## [0.3.1] - 2026-11-05
 
 ### Added
