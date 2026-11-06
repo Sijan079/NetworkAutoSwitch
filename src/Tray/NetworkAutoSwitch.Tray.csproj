@@ -13,5 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Core\NetworkAutoSwitch.Core.csproj" />
     <None Include="..\..\config\policy.json" Link="policy.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Inter (SIL OFL 1.1): embedded so the app needs no installed font; the licence ships next to the exe -->
+    <EmbeddedResource Include="Fonts\*.ttf" />
+    <None Include="Fonts\Inter-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

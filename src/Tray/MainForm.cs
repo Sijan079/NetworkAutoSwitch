@@ -80,7 +80,7 @@ sealed partial class MainForm : Form
     readonly Skeleton _bannerSkeleton = new(new[] { (0.5f, 22) }, 0, 8) { Dock = DockStyle.Fill, Visible = false, Surface = Ui.Bg };
     Card _chartCard = null!;
     bool _loading, _awaitStatus;
-    TabHost _tabs = new();
+    NavShell _tabs = new();
     readonly Dictionary<string, Bitmap> _glyphs = new();
     bool _reallyClose;
 
@@ -89,7 +89,7 @@ sealed partial class MainForm : Form
         _engine = engine; _togglePause = togglePause; _setTheme = setTheme; _getTheme = getTheme; _getMute = getMute; _setMute = setMute;
         _editor = new PolicyEditor(_global) { Dock = DockStyle.Fill };
         _policyPath = Paths.DefaultPolicy;
-        Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1000; Height = 1000; MinimumSize = new Size(860, 640);
+        Text = $"Network Auto Switch {AppInfo.Version}"; Width = 1120; Height = 1000; MinimumSize = new Size(960, 640);
         // open no bigger than the screen (minus the taskbar), so the whole dashboard is visible without scrolling
         var wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1000, 1000);
         Width = Math.Min(Width, wa.Width); Height = Math.Max(MinimumSize.Height, Math.Min(Height, wa.Height));
@@ -99,14 +99,14 @@ sealed partial class MainForm : Form
         _ = Handle;
 
         _tabs.AddPage("dashboard", "Dashboard", Ui.Home, DashboardPage());
-        _tabs.AddPage("activity", "Activity", Ui.List, ActivityPage());
+        _tabs.AddPage("activity", "Programs", Ui.List, ActivityPage());   // keys stay as before: the tray menu and ShowWindow use them
         _tabs.AddPage("networks", "Networks", Ui.Wifi, NetworksPage());
         _tabs.AddPage("log", "Log", Ui.Document, LogPage());
-        _tabs.AddPage("policy", "Policy", Ui.Shield, PolicyPage());
+        _tabs.AddPage("policy", "Backup Rules", Ui.Shield, PolicyPage());
         _tabs.AddPage("settings", "Settings", Ui.Settings, SettingsPage());
         Controls.Add(_tabs);
 
-        _statusHandler = s => OnUi(() => Apply(s));
+        _statusHandler = s => OnUi(() => { Apply(s); UpdateRail(s); });
         _engine.Status += _statusHandler;
         _adaptersHandler = () => OnUi(OnAdaptersChanged);
         _engine.AdaptersChanged += _adaptersHandler;
@@ -123,6 +123,18 @@ sealed partial class MainForm : Form
     }
 
     void OnUi(Action a) { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
+
+    /// <summary>The status box at the bottom of the nav rail: is the engine running, paused or only simulating.</summary>
+    EngineStatus? _lastStatus;
+    void UpdateRail(EngineStatus s)
+    {
+        _lastStatus = s;
+        if (!Visible) return;          // nothing on screen to update while the window is hidden; OnVisibleChanged catches up
+        string detail = _engine.Live ? "Admin rights active. Settings are restored on exit." : "Dry-run: nothing on this PC is changed.";
+        if (s.Paused) _tabs.SetStatus("Engine paused", Ui.Amber, detail);
+        else if (!_engine.Live) _tabs.SetStatus("Engine simulating", Ui.Blue, detail);
+        else _tabs.SetStatus("Engine running", Ui.Green, detail);
+    }
 
     /// <summary>Stops listening to the engine, so this window can be discarded (used when the theme changes).</summary>
     protected override void Dispose(bool disposing) { if (disposing) Application.RemoveMessageFilter(_wheel); base.Dispose(disposing); }
@@ -237,6 +249,8 @@ sealed partial class MainForm : Form
     }
 
     public void CloseForReal() { _reallyClose = true; Detach(); Close(); }
+
+    protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (Visible && _lastStatus is { } s) UpdateRail(s); }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {

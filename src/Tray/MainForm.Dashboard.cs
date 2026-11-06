@@ -185,7 +185,7 @@ sealed partial class MainForm
                 float pt = 15f;
                 for (; pt > 9f; pt -= 0.5f)
                 {
-                    using var f = Ui.UiFont(pt, bold: true);
+                    var f = Ui.UiFont(pt, bold: true);   // shared font: not disposed
                     if (TextRenderer.MeasureText(value.Text, f, new Size(int.MaxValue, 200), TextFormatFlags.NoPadding).Width <= room) break;
                 }
                 if (Math.Abs(value.Font.Size - pt) > 0.01f) { var old = value.Font; value.Font = Ui.UiFont(pt, bold: true); old.Dispose(); }
