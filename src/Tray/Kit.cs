@@ -249,7 +249,8 @@ sealed class Field : Panel
         _box = new FieldBox(input, suffix) { Dock = DockStyle.Top, Height = 36 };
         Controls.Add(_box); Controls.Add(_label);
     }
-    protected override void OnBackColorChanged(EventArgs e) { base.OnBackColorChanged(e); _label.BackColor = BackColor; _box.Invalidate(); }
+    // the constructor sets BackColor before _box exists, so it can be null here
+    protected override void OnBackColorChanged(EventArgs e) { base.OnBackColorChanged(e); _label.BackColor = BackColor; _box?.Invalidate(); }
 
     sealed class FieldBox : Panel
     {
