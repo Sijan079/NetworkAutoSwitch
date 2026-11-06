@@ -112,14 +112,21 @@ docs/                      these documents; docs/legacy holds the original proto
 | File | Role |
 |---|---|
 | `TrayProgram.cs` | Start-up, the tray icon and menu, notifications, the quit listener, theme changes. |
-| `MainForm.cs` | The window: Dashboard, Log, Policy and Settings pages. |
-| `Ui.cs` | The design system: theme palette, icons, buttons, cards, tabs, loading placeholders, the adapter card. |
-| `PolicyEditor.cs`, `GlobalTriggerCard.cs` | The rules editor and the global trigger card. |
-| `ProgramPicker.cs`, `JsonDialog.cs` | Dialogs. |
-| `ConnectionsDialog.cs`, `NetworkRoleDialog.cs` | Choose Connections (mode, Main and Backup tables, unlabelled list, adapters under Advanced) and the ask-once prompt for a new network. |
-| `LatencyChart.cs` (the chart and its legend), `Logo.cs`, `NoWheel.cs`, `UiSelfTest.cs` | The chart, the app icon drawn in code, controls that ignore the mouse wheel, and a UI test helper. |
+| `MainForm.cs` | The window's shell: the left menu, hosting the pages, window behaviour. Each page below is a `partial class MainForm` in its own file. |
+| `MainForm.Dashboard.cs`, `AdapterCard.cs`, `LatencyChart.cs`, `DashboardMeter.cs`, `DashboardTable.cs`, `DashboardPaint.cs` | The Dashboard: connection cards, the Mode bar, the latency chart, the data meter, the quick-view tables and the alarm banner. |
+| `MainForm.Programs.cs`, `ProgramsTable.cs` | The Programs page: Network Activity and the Blocked table with their actions. |
+| `MainForm.Networks.cs`, `ConnectionsDialog.cs`, `NetworksList.cs` | The Networks page (`ConnectionsPanel`): networks listed by what they become (Main, Backup, Unlabelled, Barred), the sort buttons, the list mode and the adapters. `ConnectionsDialog` is the same page in a window of its own for the first-run welcome. |
+| `MainForm.Log.cs`, `LogRow.cs` | The Log page: filter, search and the coloured rows. |
+| `MainForm.Rules.cs`, `PolicyEditor.cs`, `RulesControls.cs`, `GlobalTriggerCard.cs` | The Backup Rules page: the global trigger, the rule list and the rule editor. |
+| `MainForm.Settings.cs` | The Settings page. |
+| `Kit.cs` | The control kit every page is built from: `KitButton` (with a busy spinner), `Chip`, `Toggle`, `Segmented`, `Field` (number fields get a minus at the start and a plus at the end), `SearchBox`, `PageHeader`, `Banner`, and `NavShell` (the left menu and the loading skeleton). |
+| `Ui.cs`, `AppFonts.cs`, `Fonts\` | The design system: the dark and light palettes, cached brushes, pens, fonts and icons, `Card`, list styling; and loading the bundled Inter font. |
+| `ProgramPicker.cs`, `JsonDialog.cs`, `WelcomeDialog.cs`, `NetworkRoleDialog.cs`, `DialogParts.cs` | Dialogs: the program picker, the JSON editor, the first-run welcome and the ask-once prompt for a new network. |
+| `Logo.cs`, `NoWheel.cs`, `ScrollSurface.cs`, `UiSelfTest.cs` | The app icon drawn in code, controls that ignore the mouse wheel, pages that scroll without a scrollbar (and the wheel router), and a UI test helper. |
 
-Every color comes from the palette in `Ui.cs`, and the window is rebuilt when the theme changes. There are no nested cards: each card sits directly on its page.
+Every colour comes from the palette in `Ui.cs`, and the window is rebuilt when the theme changes. Text is set in **Inter**, bundled in the program (SIL OFL licence next to it), with Segoe UI as the fallback. There are no nested cards: each card sits directly on its page, and every page uses the same frame (28 px at the sides, 16 px between cards).
+
+Paint code never allocates: brushes, pens, fonts and icon bitmaps come from caches in `Ui`, rounded outlines are rebuilt only when a control's size changes, and a page that is not in view does no work. Pages scroll with the wheel or touchpad and show no scrollbar. Opening a page shows a short loading skeleton while it lays out.
 
 ### `src/Cli` (`nas-cli`)
 

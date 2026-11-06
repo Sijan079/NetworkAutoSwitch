@@ -51,22 +51,24 @@ The tray icon shows the state: **green** = on the main connection, **amber** = o
 
 | Page | What it is for |
 |---|---|
-| **Dashboard** | Live status, both connections (network name, adapter, average ping and uptime on the left, the current ping on the right), a latency chart, session numbers, and **Network Activity**: what each program downloaded and uploaded, on the main connection and on the backup (with one-click *Add To Watch List*). Panels for **Blocked** programs (Unblock) and **Allowed For Now** (Block Now / Watch Again) appear when needed. The **Mode** button chooses Automatic or stay on one connection; **Pause** puts Windows fully back to normal. |
-| **Log** | Live, newest first, colored by type (switch, block, unblock, error, info). Select rows and press Ctrl+C to copy. |
-| **Policy** | The rules for the backup connection. *Add Rule* opens a program picker (programs that used backup data first, then running ones); you can also drag an `.exe` onto the page. *Edit As JSON* edits the same rules as text. |
-| **Settings** | Theme, how long the main connection must be good before switching back, mute notifications, **start when I sign in**, the **daily data limit** and check interval for the backup, the Global Trigger (how much a watched program may download before it is blocked), and **updates**: the app checks GitHub for a new release at start and once a day (switch it off here) and installs it with one click on **Update**. |
+| **Dashboard** | Both connections side by side (network, adapter, status, latency, uptime): the one in use is filled with its colour, the other is dimmed. A **Mode** bar (Automatic, Stay On Main, Stay On Backup), a latency chart, today's backup data against your daily limit, a quick view of **Network Activity** and the **Watchdog**, and a red alarm when your main connection turns out to be your phone. **Pause** puts Windows fully back to normal. |
+| **Programs** | What each program downloaded and uploaded, on the main connection and on the backup, with *Add To Watch List*, and the **Blocked** table: a closed lock means blocked, an open lock means allowed for now; *Allow*, *Unblock All*, *Block Now* and *Watch* act on the rows. |
+| **Networks** | Sort your networks into **Main**, **Backup** and **Unlabelled** (*Make Main*, *Make Backup*, *Unlabel*), choose Blacklist or Whitelist, and pick the adapters yourself under *Adapters*. **Save** and **Revert** are on only when something changed. |
+| **Log** | Live, newest first, coloured by type, with a filter (All, Switches, Blocks, Errors, Commands) and a search box with a clear button. Select rows and press Ctrl+C to copy. |
+| **Backup Rules** | The Global Trigger (how much a watched program may download before it is blocked) and the rules for the backup connection. *Add Program* opens a picker (programs that used backup data first, then running ones); you can also drag an `.exe` onto the page. Each rule is *Watch*, *Block* or *Upload Cap*. |
+| **Settings** | The adapters in use, how long the main connection must be good before switching back, how often the idle backup is checked, the **daily data cap (in GB)**, theme, **start when I sign in**, mute notifications, log length, and **updates**: the app checks GitHub for a new release at start and once a day (switch it off here) and installs it with one click on **Update**. |
 
 **Exit** (tray menu) restores everything first. A VPN such as Cloudflare WARP is supported; the dashboard then shows a *VPN* badge (see [How it works](docs/ARCHITECTURE.md#vpns)).
 
 ## Which network is main, which is backup
 
-Open **Mode, then Choose Connections** and sort your networks into a **Main** table and a **Backup** table (your phone's hotspot goes in Backup). The role belongs to the **network**, not to an adapter, so it holds whichever adapter that network is on, and swapping adapters by mistake does no harm.
+Open the **Networks** page and sort your networks into **Main** and **Backup** (your phone's hotspot goes in Backup). The role belongs to the **network**, not to an adapter, so it holds whichever adapter that network is on, and swapping adapters by mistake does no harm.
 
-- **Mode** applies to both tables. *Blacklist*: a table lists the networks barred from that role (barred from main = always backup). *Whitelist*: a table lists the only networks that may have that role.
+- **Mode** (Blacklist or Whitelist) only decides how your choices are stored. The page always lists networks by what they **become**: *Make Main* puts a network under Main Networks and *Make Backup* under Backup Networks, in both modes. Under the hood, *Blacklist* stores the networks barred from a role (barred from main = always backup) and *Whitelist* stores the only networks that may have it.
 - **Unlabelled** networks (on neither table) are asked about once, then treated as backup until you sort them. A backup network is protected even if it ends up as the main connection: heavy downloads on your watch list are blocked and its data counts toward your daily limit.
 - If both adapters end up on the same network, the dashboard shows **SAME NETWORK**: switching cannot keep you online, because both fail together.
 - If your **main** connection ends up on a backup network (for example your phone), a red banner appears on the dashboard and a tray pop-up tells you, **even if notifications are muted**.
-- The adapters themselves are under *Advanced* in that window. They only matter when the tables cannot decide.
+- The adapters themselves are under *Adapters* on that page. They only matter when the labels cannot decide.
 
 ## Documentation
 
@@ -98,7 +100,7 @@ Running the tests and building the installer: [docs/DEVELOPMENT.md](docs/DEVELOP
 - Download **speed limits** are not possible with built-in Windows tools (only upload caps), so the watchdog blocks instead.
 - Connections that are not heavy and not on the watch list (for example a game session) stay on the backup until they reconnect on their own.
 - IPv4 only.
-- It manages **two** connections at a time. With three or more real adapters, the networks you sort decide which two (or choose the adapters under *Advanced* in *Choose Connections*).
+- It manages **two** connections at a time. With three or more real adapters, the networks you sort decide which two (or choose the adapters under *Adapters* on the Networks page).
 - Networks are matched **by name**. Two different networks with the same name are treated alike, which errs on the safe side (the protections apply). While Windows is still working out a network's name, it is ignored.
 - Behind a **full-tunnel VPN** the app cannot confirm that the idle connection has internet before switching to it, only that its link and gateway are up. Excluding `8.8.8.8` and `9.9.9.9` from the VPN gives exact checks again ([how](docs/CONFIGURATION.md#if-something-goes-wrong)).
 

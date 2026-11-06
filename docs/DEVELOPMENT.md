@@ -54,10 +54,15 @@ The tray has helpers that never touch your network or capture your screen:
 
 ```powershell
 NetworkAutoSwitchTray.exe --dry-run --snapshot <folder> --theme dark    # saves a PNG of every page (and the dialogs), then quits
-NetworkAutoSwitchTray.exe --ui-test <file>                              # drives the add-a-rule screens in code, writes the outcome to a file
+NetworkAutoSwitchTray.exe --ui-test <file> [--theme dark]               # drives screens in code (add-a-rule, choosing adapters and saving, the cap's MB/GB conversion) and writes the outcome to a file, with a few pictures next to it
+NetworkAutoSwitchTray.exe --dry-run --demo-blocked --show --page settings   # a dry-run window opened on one page, with sample blocked programs
 ```
 
 The snapshots are drawn by the window itself (`DrawToBitmap`), so they work with the window hidden. Use them to review a UI change in both themes.
+A snapshot (and `--ui-test`) runs on a **private copy of the data folder** (the `NAS_DATA_DIR` environment variable, see [CONFIGURATION.md](CONFIGURATION.md)), so it can never change your real settings, and it always quits by itself.
+Set `NAS_DATA_DIR` yourself, pointing at a folder with copies of `settings.json` and `policy.json`, when you run a dry-run window you are going to click around in.
+
+`DrawToBitmap` has two blind spots: it skips hidden controls and paints overlapping controls in the wrong order. For details such as these, look at the real window (`--show --page <name>`), not only at a snapshot.
 
 ## The installer
 

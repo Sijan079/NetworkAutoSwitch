@@ -1,6 +1,6 @@
 # NetworkAutoSwitch: UI redesign brief (hand-off for Claude Code)
 
-Status: design approved by the user (2026-11-06). Implementation not started. Design mockups (8 screens, private canvas): https://claude.ai/artifact/PxPx6rry9q5AiZ8sSJNcJo Repo: https://github.com/Sijan079/NetworkAutoSwitch. See `repo-docs-digest.md` and `function-index.md` for the code layout.
+Status: **implemented in 0.3.2** (2026-11-06); the notes at the end say where the build differs from this brief. Design mockups (8 screens, private canvas): https://claude.ai/artifact/PxPx6rry9q5AiZ8sSJNcJo Repo: https://github.com/Sijan079/NetworkAutoSwitch. See `repo-docs-digest.md` and `function-index.md` for the code layout.
 
 ## Decisions
 
@@ -48,3 +48,13 @@ Title Case labels; explanations in tooltips; colours only from `Ui.cs`; network 
 
 1. Font loader + palette in `Ui.cs` + control kit.
 2. Dashboard (both states). 3. Nav rail shell. 4. Log, Rules, Settings. 5. Dialogs. 6. Light theme pass, DPI pass, size and memory check. Ask the user for current installer size and memory use (window open) before and after.
+
+## Where the build differs from this brief (0.3.2)
+
+- **Six pages, not four.** The menu is Dashboard, Programs (the full Network Activity and Blocked tables), Networks (replaces the Choose Connections dialog and lists networks by what they become), Log, Backup Rules and Settings. The mockups for Log, Backup Rules and the dialogs were followed; Programs and Networks were designed from the same kit.
+- **No engine box at the bottom of the menu, and no subtitle under page titles.** Explanations live in tooltips (the (i) icons and the hover text); only warnings that need action stay on screen.
+- **Number fields** have a minus at the start and a plus at the end, hold at most 4 digits, and the daily data cap is edited in GB (stored in MB). Windows' own spinner is clipped away.
+- **Save and Revert** are active only when something changed; Save shows a spinner while it applies.
+- **The connection not in use is dimmed**, whatever its status; the Mode bar fills the choice in force with its colour (Automatic blue, Main teal, Backup amber).
+- Fonts: Inter Regular, SemiBold and Bold are bundled (`src/Tray/Fonts`, licence included) and loaded privately at start; Segoe UI is the fallback. The light palette keeps the same roles with darker inks for contrast.
+- The control kit is in `src/Tray/Kit.cs`; see [ARCHITECTURE.md](ARCHITECTURE.md#srctray). Reference markup of the mockups is in `docs/ui-mockups/` (HTML, not rendered locally).

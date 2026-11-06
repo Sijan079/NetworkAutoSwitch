@@ -1,6 +1,6 @@
 # Configuration
 
-Everything the app stores lives in **`C:\ProgramData\NetworkAutoSwitch\`**. All files are plain text and safe to read.
+Everything the app stores lives in **`C:\ProgramData\NetworkAutoSwitch\`**. All files are plain text and safe to read. (For testing, the environment variable `NAS_DATA_DIR` points the app at another folder; `--snapshot` runs use a private copy this way, so they never touch your real settings.)
 
 | File | What it holds |
 |---|---|
@@ -20,7 +20,7 @@ The task starts the copy you turned it on from; turning it on again from another
 
 ## Your connections
 
-Sort your networks in **Mode, then Choose Connections** (in the window or the tray menu). The role belongs to the **network** (its name, for example `SNcial`), not to an adapter, so it holds on whichever adapter that network is on.
+Sort your networks on the **Networks** page (in the window or from the tray menu). The role belongs to the **network** (its name, for example `SNcial`), not to an adapter, so it holds on whichever adapter that network is on.
 
 | Mode | Main table | Backup table |
 |---|---|---|
@@ -77,15 +77,15 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 | `NetworkListMode` | `Blacklist` | `Blacklist` or `Whitelist`: how the two tables are read (see *Your connections*). |
 | `BlacklistMainNetworks`, `BlacklistBackupNetworks` | empty | The two tables in Blacklist mode: networks barred from main, networks barred from backup. |
 | `WhitelistMainNetworks`, `WhitelistBackupNetworks` | empty | The two tables in Whitelist mode: the only networks allowed as main, as backup. |
-| `PrimaryAdapter`, `BackupAdapter` | empty | Adapter names you chose under *Advanced*. Empty = detect automatically. Only used when the tables cannot decide. |
+| `PrimaryAdapter`, `BackupAdapter` | empty | Adapter names you chose under *Adapters* on the Networks page. Empty = detect automatically. Only used when the tables cannot decide. |
 | `LastPrimary`, `LastBackup` | empty | What detection chose last time (used only to keep the choice stable across restarts). |
 | `RecoverSeconds` | `10` | Seconds the main connection must work, without a single failed check, before moving back from the backup (3 to 600). |
 | `MuteNotifications` | `false` | Hide the tray pop-ups (everything is still logged). |
 | `CheckForUpdates` | `true` | Look for a newer release on GitHub at start and once a day. Installing always needs your click. |
 | `Welcomed` | missing | `false` on a brand-new install until the first-run welcome has been shown, then `true`. Missing = installed before the welcome existed. |
-| `LogLines` | `2000` | How many lines the Log page keeps on screen (100 to 20000); older lines drop off the bottom. The log file is not shortened. |
+| `LogLines` | `2000` | How many lines the Log page keeps on screen (100 to 9999 in the Settings box; the file may hold up to 20000); older lines drop off the bottom. The log file is not shortened. |
 | `BackupCheckSeconds` | `10` | While the main connection is fine, the idle backup is checked this often (1 to 60 s). Every check uses a little mobile data. |
-| `DailyCapMB` | `0` | Daily limit for data through the backup, in MB (`0` = no limit). You are told at 80 % and when it is reached. |
+| `DailyCapMB` | `0` | Daily limit for data through the backup, in MB (`0` = no limit). The Settings page shows and edits it in **GB** (1 GB = 1000 MB, up to 9999 GB). You are told at 80 % and when it is reached. |
 
 ## Command-line options of the tray
 
@@ -95,7 +95,8 @@ Saving from the window checks the file first, applies it at once, and refuses a 
 | `--primary <name>` / `--backup <name>` | Fix an adapter instead of detecting it (the network tables can still override it). |
 | `--dry-run` | Run without changing anything on the PC. |
 | `--show` | Open the window at start. |
-| `--theme light\|dark` | Force a theme for this run (not saved). |
+| `--theme light
+| `--page <name>` | With `--show`: open the window on that page (`dashboard`, `activity` for Programs, `networks`, `log`, `policy` for Backup Rules, `settings`). |\|dark` | Force a theme for this run (not saved). |
 
 ## If something goes wrong
 

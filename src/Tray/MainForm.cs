@@ -61,7 +61,6 @@ sealed partial class MainForm : Form
     sealed record LogEntry(string Time, string Message, LogKind Kind);
     readonly ListBox _log = new() { Dock = DockStyle.Fill, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 28, IntegralHeight = false, BorderStyle = BorderStyle.None,
         BackColor = Ui.CardBg, HorizontalScrollbar = true, SelectionMode = SelectionMode.MultiExtended };
-    int _logWidth = 600;
     int _maxLogRows = Math.Clamp(AppSettings.Load().LogLines, 100, 20000);      // lines kept on screen (Settings → Log)
     // policy and settings
     readonly List<Label> _policyStatus = new();

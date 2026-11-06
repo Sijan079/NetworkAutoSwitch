@@ -170,7 +170,7 @@ sealed class Chip : KitControl
     }
 
     /// <summary>The same chip drawn straight onto a surface (table rows, the log), without a control per row.</summary>
-    public static int Paint(Graphics g, string text, Color role, int x, int centreY, bool filled = false)
+    public static new int Paint(Graphics g, string text, Color role, int x, int centreY, bool filled = false)
     {
         var f = Ui.UiFont(8.25f, Weight.SemiBold);
         int w = TextRenderer.MeasureText(g, text, f, Size.Empty, TextFormatFlags.NoPadding).Width + 18;

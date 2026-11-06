@@ -8,23 +8,29 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ## [Unreleased]
 
-### Added
-- **Activity page** (a new tab next to the Dashboard): the full *Network Activity* table (sorting, *Add To Watch List*, *Reset*) and the *Blocked* table (*Unblock*, *Unblock All*, *Block*, *Watch*). Clicking the "is blocked" pop-up opens it.
+## [0.3.2] - 2026-11-06
 
-- **Networks page** (a new tab): the Main and Backup network tables, the unlabelled networks, the Blacklist / Whitelist mode and the adapters (under *Choose adapters myself*), with Save and Revert. It replaces the *Choose Connections* window; the mode menu, the warning banner and the tray menu open it.
+### Added
+- **A redesigned window.** A left menu replaces the tabs: **Dashboard**, **Programs**, **Networks**, **Log**, **Backup Rules** and **Settings**. The app now uses the **Inter** font, new dark and light colour schemes with the same meaning everywhere (teal = main, amber = backup, red = blocked or error, blue = information), rounded cards, one spacing rule on every page, and buttons, switches and fields drawn in the app's own style. Pages scroll with the wheel or touchpad without showing a scrollbar, and opening a page shows a short loading placeholder while it lays out.
+- **Programs page** (was *Activity*): the full *Network Activity* table (sorting, *Add To Watch List*, *Reset*) and the *Blocked* table. On the Blocked table a closed lock means blocked and an open lock means allowed for now.
+- **Networks page** (replaces the *Choose Connections* window): networks are listed by what they **become**: *Main Networks*, *Backup Networks*, *Unlabelled* and *Barred*. *Make Main* now always puts a network under Main, and *Make Backup* under Backup, in both Blacklist and Whitelist mode (before, Blacklist mode stored it in the opposite table, which looked backwards). The adapters are under *Adapters*. **Save** and **Revert** are on only when something changed, and Save shows a spinner while it applies.
+- **Log page**: a filter (All, Switches, Blocks, Errors, Commands) and a search box with a clear button.
+- **Number fields** have a **−** at the start and a **+** at the end (hold to repeat), hold at most 4 digits, and dim a button at its limit.
+- **Dashboard**: a **Mode** bar whose chosen option is filled with its colour (Automatic blue, Stay On Main teal, Stay On Backup amber); a red alarm banner (amber when it is only "not sorted yet") when your main connection turns out to be your phone; the **Watchdog** shows a lock icon button per row.
 
 ### Changed
-- **The dashboard shows both tables read-only**, as a quick look; you act on them on the Activity page.
-- **Rounded cards**, and the card of the connection in use is filled with its role colour (green on Main, amber on Backup) with white text, instead of a coloured border. The average ping and the uptime are shown with a symbol (a gauge and an up arrow; hover for the name) instead of words. Icons are drawn thicker and brighter across the window (card headers, Session, buttons, tabs), so they are easy to see. Text follows one rule: titles, names and numbers are white (the text colour), labels and details are muted. The latency legend names the networks (for example SNcial_5G and SNcial) instead of the adapters, and the chart uses the app's colours: green for Main, amber for Backup. The window opens no bigger than the screen and the whole dashboard fits in it without scrolling (it only scrolls in a window shorter than about 700 px). Dropdowns are drawn in the app's theme (rounded box, chevron, themed list). The *Locked* badge is gone: the mode button already says *Stay On ...*. The (i) icon is centred on the title line.
-- Dashboard alignment: the Session numbers line up with the card titles and their icons with the card icons, the latency plot reaches the same right edge as the legend and the tables, and the Blocked card shows three whole rows.
-- On the Activity page, *Add To Watch List* and *Reset* sit in the card's header, on the right of the title. The (i) info icon of every card now sits right after its title.
+- **The daily data cap is entered in GB** (it is still stored in MB; 1 GB = 1000 MB, like the dashboard meter). A cap of 10000 MB shows as 10.0 GB. Number boxes stop at 4 digits (for example the log length is 100 to 9999 lines); a saved value above that is shown as 9999.
+- **The connection that is not in use is dimmed** on the dashboard, whatever its status, so the one in use stands out.
+- *Policy* is now called **Backup Rules** and *Activity* is **Programs**. The **Global Trigger** moved from Settings to Backup Rules, next to the rules it applies to. On Settings the numbers apply by themselves a moment after you change them (there is no Save there).
+- **Less text on screen.** Page subtitles, hints under fields and status sentences are gone; explanations are in the hover tips (the (i) icons), and only warnings that need action stay visible.
+- For developers: `--page <name>` opens the window on a page, the `NAS_DATA_DIR` environment variable points the app at another data folder, and `--snapshot` runs use a private copy of your settings and always quit by themselves (see `docs/DEVELOPMENT.md`).
 
 ### Fixed
-- A white strip in the Network Activity header when a column was dragged narrower. The Watch List column now always takes what is left.
 - **Settings can no longer be lost or reset by two saves at once** (#1). Saves are locked and written to a temp file first, and a damaged settings file is recovered from a `.bak` copy instead of being replaced by the defaults.
 - **An adapter without IPv4 no longer stops the engine** (#9); it is shown as unhealthy ("no IPv4").
 - **A stuck PowerShell command no longer freezes the app** (#8). Each command has a 30 s limit, both outputs are read, and only the exit code decides failure (other error text is logged as a warning).
 - **Rule names are quoted safely in firewall commands** (#6), including curly quotes, and names with characters outside letters, digits, spaces and `- _ . ( ) + &` are cleaned on load (a log line says so).
+- A white strip in the Network Activity header when a column was dragged narrower.
 
 ## [0.3.1] - 2026-11-05
 

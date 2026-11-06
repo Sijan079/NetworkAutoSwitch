@@ -69,7 +69,7 @@ sealed class NoWheelComboBox : ComboBox
         using (var pen = new Pen(Focused || DroppedDown ? Ui.Green : Ui.Border)) g.DrawPath(pen, path);      // focus is teal on every field
         g.SmoothingMode = SmoothingMode.None;
         Color fg = Enabled ? Ui.Text : Ui.Muted;
-        string text = SelectedIndex >= 0 ? GetItemText(SelectedItem) : Text;
+        string text = (SelectedIndex >= 0 ? GetItemText(SelectedItem!) : Text) ?? "";
         var tr = new Rectangle(12, 0, Width - 40, Height);      // same text inset as the other fields
         TextRenderer.DrawText(g, text, Font, tr, fg, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         using var chevron = Ui.GlyphBold("", 14, Ui.Muted);      // ChevronDown
