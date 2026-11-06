@@ -37,7 +37,7 @@ sealed partial class MainForm
     }
 
     /// <summary>Discards unsaved changes: the rules and the global trigger from the file, the Settings numbers from the engine.</summary>
-    void RevertAll() { _recover.Value = _engine.RecoverSeconds; _cap.Value = _engine.DailyCapMB; _backupCheck.Value = _engine.BackupCheckSeconds; _logLines.Value = _maxLogRows; LoadPolicy(); }
+    void RevertAll() { _recover.Value = _engine.RecoverSeconds; _cap.Value = Math.Min(_cap.Maximum, Math.Max(_cap.Minimum, CapToGb(_engine.DailyCapMB))); _backupCheck.Value = _engine.BackupCheckSeconds; _logLines.Value = _maxLogRows; LoadPolicy(); }
 
     /// <summary>Save / Revert (and, on the Policy page, "Edit As JSON"). Saving writes the whole policy: the rules AND the global trigger.</summary>
     Control ActionBar(Action? beforeSave = null, bool jsonButton = false)

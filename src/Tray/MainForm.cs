@@ -68,7 +68,7 @@ sealed partial class MainForm : Form
     readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Policy page reads it
     readonly PolicyEditor _editor;
     readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
-    readonly NoWheelNumeric _cap = new() { Minimum = 0, Maximum = 9999, Increment = 100, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };
+    readonly NoWheelNumeric _cap = new() { DecimalPlaces = 1, Minimum = 0, Maximum = 9999, Increment = 0.5m, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };
     readonly NoWheelNumeric _logLines = new() { Minimum = 100, Maximum = 9999, Increment = 100, Width = 96 };
     readonly CheckBox _startup = new() { Text = "Start When I Sign In", AutoSize = true, BackColor = Ui.CardBg };
     bool _startupBusy;

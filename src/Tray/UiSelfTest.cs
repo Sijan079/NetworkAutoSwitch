@@ -155,6 +155,16 @@ static class UiSelfTest
                 bf.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
                 bmp.Save(outFile + (severe ? ".banner-red.png" : ".banner-amber.png"));
             }
+            // 5) the daily cap is shown in GB and stored in MB: 10000 MB is 10 GB, 1.5 GB is 1500 MB, 0 stays 0 (no limit), and a round trip changes nothing
+            {
+                var toGb = typeof(MainForm).GetMethod("CapToGb", BindingFlags.NonPublic | BindingFlags.Static)!;
+                var toMb = typeof(MainForm).GetMethod("GbToCapMb", BindingFlags.NonPublic | BindingFlags.Static)!;
+                decimal G(int mb) => (decimal)toGb.Invoke(null, new object[] { mb })!;
+                int M(decimal gb) => (int)toMb.Invoke(null, new object[] { gb })!;
+                if (G(10000) != 10m || M(10m) != 10000 || M(1.5m) != 1500 || G(0) != 0m || M(0m) != 0) throw new Exception("cap conversion between MB and GB is wrong");
+                foreach (int mb in new[] { 0, 500, 1500, 10000, 9999000 }) if (M(G(mb)) != mb) throw new Exception($"cap {mb} MB does not survive a round trip through GB");
+                Say("cap: 10000 MB = 10.0 GB, 1.5 GB = 1500 MB, round trips are exact");
+            }
             Say("RESULT: no exception");
         }
         catch (Exception e) { Say("RESULT: EXCEPTION\r\n" + e); }

@@ -20,6 +20,11 @@ sealed partial class MainForm
     Toggle? _startupToggle;
     Label? _startupDetail;
     const string StartupDetailText = "";      // the row stays one line; a failure to change it still shows here in red
+
+    /// <summary>The daily cap is stored in MB and shown in GB (1 GB = 1000 MB, like the dashboard meter). 10000 MB shows as 10.0 GB.</summary>
+    static decimal CapToGb(int mb) => mb / 1000m;
+    static int GbToCapMb(decimal gb) => (int)Math.Round(gb * 1000m);
+
     Button? _openReleaseBtn;
     bool _releaseShown;                 // "Visible" reads false while the page is hidden, so the wanted state is kept here for the layout
     string _releaseUrl = UpdateCheck.ReleasesPage;
@@ -82,10 +87,11 @@ sealed partial class MainForm
             "Daily data cap: you are told when the backup has carried 80 % of it today, and when it is reached. It counts everything through the backup adapter and starts again at midnight. 0 = no limit.");
         _recover.Value = Math.Min(_recover.Maximum, Math.Max(_recover.Minimum, _engine.RecoverSeconds));
         _backupCheck.Value = Math.Min(_backupCheck.Maximum, Math.Max(_backupCheck.Minimum, _engine.BackupCheckSeconds));
-        _cap.Value = Math.Min(_cap.Maximum, Math.Max(_cap.Minimum, _engine.DailyCapMB));
+        _cap.Value = Math.Min(_cap.Maximum, Math.Max(_cap.Minimum, CapToGb(_engine.DailyCapMB)));
         var fRecover = new Field(Ui.T("Switch back after"), Bare(_recover), "seconds");
         var fCheck = new Field(Ui.T("Check idle backup every"), Bare(_backupCheck), "seconds");
-        var fCap = new Field(Ui.T("Daily data cap"), Bare(_cap), "MB");
+        var fCap = new Field(Ui.T("Daily data cap"), Bare(_cap), "GB");
+        Ui.Tip.SetToolTip(_cap, "The most data the backup may use in a day. 0 = no limit. You are told at 80 % and when it is reached.");
         var note = Lbl("", 9f, Weight.Regular, Ui.Muted); note.Visible = false;   // the field tooltips explain the numbers
         note.AutoEllipsis = false; note.TextAlign = ContentAlignment.TopLeft;
         switching.Body.Controls.AddRange(new Control[] { fRecover, fCheck, fCap, note });
@@ -167,7 +173,7 @@ sealed partial class MainForm
             apply.Stop();
             if ((int)_recover.Value != _engine.RecoverSeconds) _engine.SetRecoverSeconds((int)_recover.Value);
             if ((int)_backupCheck.Value != _engine.BackupCheckSeconds) _engine.SetBackupCheckSeconds((int)_backupCheck.Value);
-            if ((int)_cap.Value != _engine.DailyCapMB) _engine.SetDailyCapMB((int)_cap.Value);
+            if (GbToCapMb(_cap.Value) != _engine.DailyCapMB) _engine.SetDailyCapMB(GbToCapMb(_cap.Value));
             SetLogLines((int)_logLines.Value);       // has its own "unchanged" check
         }
         apply.Tick += (_, _) => ApplyValues();
