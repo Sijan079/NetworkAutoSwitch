@@ -486,6 +486,22 @@ static class SelfTest
         Check("restore: when one command fails, the others STILL run (and the failure is reported)", worst != 0 && File.Exists(marker));
         if (File.Exists(marker)) File.Delete(marker);
 
+        // the PowerShell runner (#8): harmless commands only, nothing on the PC is changed
+        var runLog = new List<string>();
+        Check("runner: a command printing ~1 MB to stdout does not hang (both pipes are drained)",
+              BackupPolicy.Run(new[] { "Write-Output ('x' * 1048576); exit 0" }, false, runLog.Add, TimeSpan.FromSeconds(20)) == 0);
+        Check("runner: a non-zero exit code is a failure", BackupPolicy.Run(new[] { "exit 1" }, false, _ => { }) == 1);
+        runLog.Clear();
+        Check("runner: text on stderr with exit code 0 is a success, logged as a warning",
+              BackupPolicy.Run(new[] { "[Console]::Error.WriteLine('just a note'); exit 0" }, false, runLog.Add) == 0 && runLog.Any(l => l.Contains("WARNING") && l.Contains("just a note")));
+        runLog.Clear();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int slow = BackupPolicy.Run(new[] { "Start-Sleep -Seconds 30" }, false, runLog.Add, TimeSpan.FromSeconds(2));
+        sw.Stop();
+        Check($"runner: a hung command is killed at the timeout and reported as failed ({sw.Elapsed.TotalSeconds:0.0} s)",
+              slow == 1 && sw.Elapsed < TimeSpan.FromSeconds(15) && runLog.Any(l => l.Contains("timed out")));
+        Check("runner: dry run only prints, nothing is started", BackupPolicy.Run(new[] { "exit 1" }, true, _ => { }) == 0);
+
         // adapter detection, using the REAL descriptions seen on a PC with two Wi-Fi adapters, a phone tether and lots of driver layers
         AdapterKind K2(string d, NetworkInterfaceType t = NetworkInterfaceType.Ethernet) => AdapterDiscovery.Classify(d, t);
         Check("detect: a Wi-Fi card is Wi-Fi", K2("MediaTek Wi-Fi 6 MT7921 Wireless LAN Card", NetworkInterfaceType.Wireless80211) == AdapterKind.WiFi);

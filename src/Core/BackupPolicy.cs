@@ -124,20 +124,54 @@ public static class BackupPolicy
         return failed == 0 ? 0 : 1;
     }
 
+    /// <summary>How long one PowerShell command may run before it is killed and counted as failed.
+    /// Our commands (firewall, QoS, interface metric, scheduled task) normally finish in well under 5 s, even on a slow PC
+    /// where PowerShell itself takes a few seconds to start. 30 s leaves plenty of room for that, but a hung command
+    /// (a stuck WMI/CIM provider, a prompt nobody can answer) can no longer block the caller forever, which mattered
+    /// because the switch engine calls this while holding its lock.</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
     /// <summary>dryRun=true only prints. Real execution needs admin.</summary>
-    public static int Run(IEnumerable<string> cmds, bool dryRun, Action<string>? log = null)
+    public static int Run(IEnumerable<string> cmds, bool dryRun, Action<string>? log = null) => Run(cmds, dryRun, log, DefaultTimeout);
+
+    /// <summary>Same as Run, with a chosen per-command timeout (the self-test uses a short one).
+    /// Success is decided by the exit code. Text on stderr with exit code 0 is only logged as a warning.
+    /// Returns 0 if all succeeded; stops at the first failure and returns 1.</summary>
+    public static int Run(IEnumerable<string> cmds, bool dryRun, Action<string>? log, TimeSpan timeout)
     {
         log ??= Console.WriteLine;
         foreach (var c in cmds)
         {
             log((dryRun ? "[dry-run] " : "[run]     ") + c);
             if (dryRun) continue;
-            var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
-            psi.ArgumentList.Add("-NoProfile"); psi.ArgumentList.Add("-Command"); psi.ArgumentList.Add(c);
-            using var proc = Process.Start(psi)!;
-            string err = proc.StandardError.ReadToEnd(); proc.WaitForExit();
-            if (proc.ExitCode != 0 || err.Length > 0) { log("  FAILED: " + err.Trim()); return 1; }
+            var r = RunOne(c, timeout);
+            if (r.TimedOut) { log($"  FAILED: timed out after {timeout.TotalSeconds:0.#} s (killed)"); return 1; }
+            if (r.ExitCode != 0) { log($"  FAILED (exit {r.ExitCode}): " + r.Err.Trim()); return 1; }
+            if (r.Err.Trim().Length > 0) log("  WARNING: " + r.Err.Trim());
         }
         return 0;
+    }
+
+    record RunResult(int ExitCode, string Err, bool TimedOut);
+
+    /// <summary>Runs one command. Both stdout and stderr are read at the same time, so a command that prints a lot
+    /// cannot fill a pipe and hang waiting for us to read it.</summary>
+    static RunResult RunOne(string c, TimeSpan timeout)
+    {
+        var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
+        psi.ArgumentList.Add("-NoProfile"); psi.ArgumentList.Add("-NonInteractive"); psi.ArgumentList.Add("-Command"); psi.ArgumentList.Add(c);
+        using var proc = Process.Start(psi)!;
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        if (!proc.WaitForExit(timeout))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch (Exception) { /* already gone */ }
+            proc.WaitForExit(TimeSpan.FromSeconds(5));
+            return new RunResult(-1, "", true);
+        }
+        // The process has exited; its pipes close with it. Bounded wait in case a child it started still holds them open.
+        Task.WaitAll(new Task[] { outTask, errTask }, TimeSpan.FromSeconds(5));
+        string err = errTask.IsCompletedSuccessfully ? errTask.Result : "";
+        return new RunResult(proc.ExitCode, err, false);
     }
 }
