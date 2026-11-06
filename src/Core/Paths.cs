@@ -7,7 +7,9 @@ public static class Paths
     {
         get
         {
-            var d = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NetworkAutoSwitch");
+            // NAS_DATA_DIR: a test copy (the tray's --snapshot) points this at a private folder so it never reads or writes the real settings
+            var d = Environment.GetEnvironmentVariable("NAS_DATA_DIR") is { Length: > 0 } over ? over
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NetworkAutoSwitch");
             Directory.CreateDirectory(d);
             return d;
         }

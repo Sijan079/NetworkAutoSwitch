@@ -24,6 +24,19 @@ static class TrayProgram
         string Arg(string k, string d) { int i = Array.IndexOf(args, k); return i >= 0 && i + 1 < args.Length ? args[i + 1] : d; }
         bool dryRun = args.Contains("--dry-run");
 
+        // --snapshot runs on a private copy of the data folder: rendering pages must never change the user's real settings, rules or log.
+        bool snapshot = args.Contains("--snapshot");
+        if (snapshot)
+        {
+            dryRun = true;
+            var real = Paths.DataDir;
+            var copy = Path.Combine(Path.GetTempPath(), "nas-snapshot-" + Environment.ProcessId);
+            Directory.CreateDirectory(copy);
+            foreach (var name in new[] { "settings.json", "policy.json", "programs.json", "usage.json" })
+                try { if (File.Exists(Path.Combine(real, name))) File.Copy(Path.Combine(real, name), Path.Combine(copy, name), true); } catch { }
+            Environment.SetEnvironmentVariable("NAS_DATA_DIR", copy);
+        }
+
         // --export-logo <folder>: write app.ico + preview images, then exit (used once to create the icon file)
         int li = Array.IndexOf(args, "--export-logo");
         if (li >= 0 && li + 1 < args.Length) { Logo.Export(args[li + 1]); return 0; }
@@ -62,7 +75,8 @@ static class TrayProgram
         }
 
         // A dry-run copy (testing only, changes nothing) gets its own lock so it can run beside the real one.
-        using var single = new Mutex(true, dryRun ? @"Global\NetworkAutoSwitchTray-dry" : @"Global\NetworkAutoSwitchTray", out bool first);
+        // A snapshot copy gets a lock of its own, so several can render at once and none waits on an "already running" box nobody sees.
+        using var single = new Mutex(true, snapshot ? @"Global\NetworkAutoSwitchTray-snap-" + Environment.ProcessId : dryRun ? @"Global\NetworkAutoSwitchTray-dry" : @"Global\NetworkAutoSwitchTray", out bool first);
         if (!first) { MessageBox.Show("Network Auto Switch is already running (check the tray).", "Network Auto Switch"); return 0; }
 
         // theme: --theme overrides the saved choice for this run only (used for testing)
@@ -131,7 +145,7 @@ sealed class TrayContext : ApplicationContext
         if (snap is not null)
         {
             var t = new System.Windows.Forms.Timer { Interval = 20000 };
-            t.Tick += (_, _) => { t.Stop(); try { _window!.Show(); _window.SaveSnapshots(snap); } catch (Exception e) { Paths.AppendLog("snapshot failed: " + e.Message); } Quit(); };
+            t.Tick += (_, _) => { t.Stop(); try { _window!.Show(); _window.SaveSnapshots(snap); } catch (Exception e) { Paths.AppendLog("snapshot failed: " + e.Message); } Quit(); Environment.Exit(0); };   // a dry-run copy has nothing to restore, so exit for sure
             t.Start();
         }
         _engine.Status += s => { if (!_stopping) _ui.BeginInvoke(() => OnStatus(s)); };
