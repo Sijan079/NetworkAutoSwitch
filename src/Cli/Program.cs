@@ -376,6 +376,43 @@ static class SelfTest
         var g3 = new DownloadGuard(new[] { wr }); g3.Record(hyp, 99_000_000, t0);
         Check("shutdown drains all blocks", g3.DrainAll().Count == 1);
         Check("block command is scoped to backup adapter and named in our group", DownloadGuard.BlockCommand(blk!, "Ethernet 2").Contains("-InterfaceAlias 'Ethernet 2'") && blk!.DisplayName.StartsWith("NetAutoSwitch-DL-"));
+        // Issue #6: the rule name reaches an admin PowerShell command. A quote in it must be doubled, never end the string.
+        var qa = new GuardAction(GuardKind.Block, "Bob's Game", @"C:\G\x.exe", DownloadGuard.DisplayNameFor("Bob's Game", @"C:\G\x.exe"));
+        Check("quoting: a rule name with ' is doubled in the block and unblock commands",
+            DownloadGuard.BlockCommand(qa, "Ethernet 2").Contains("-DisplayName 'NetAutoSwitch-DL-Bob''s Game-") &&
+            DownloadGuard.UnblockCommand(qa).Contains("-DisplayName 'NetAutoSwitch-DL-Bob''s Game-"));
+        var evil = "x'; Remove-Item C:\\Windows -Recurse; '";
+        var qe = new GuardAction(GuardKind.Block, evil, @"C:\G\it's.exe", DownloadGuard.DisplayNameFor(evil, @"C:\G\x.exe"));
+        string eb = DownloadGuard.BlockCommand(qe, "Wi-Fi 'b'"), eu = DownloadGuard.UnblockCommand(qe);
+        // The injected text must stay inside one quoted value: only doubled quotes after the opening one, up to its closing quote.
+        static bool OneLiteral(string cmd, string flag)
+        {
+            int i = cmd.IndexOf(flag + " '", StringComparison.Ordinal); if (i < 0) return false;
+            for (int j = i + flag.Length + 2; j < cmd.Length; j++)
+                if (cmd[j] == '\'') { if (j + 1 < cmd.Length && cmd[j + 1] == '\'') j++; else return j + 1 == cmd.Length || cmd[j + 1] == ' '; }
+            return false;
+        }
+        Check("quoting: a rule name with '; Remove-Item ... cannot break out of its quotes",
+            eb.Contains("x''; Remove-Item C:\\Windows -Recurse; ''") && OneLiteral(eb, "-DisplayName") && OneLiteral(eu, "-DisplayName")
+            && OneLiteral(eb, "-Program") && OneLiteral(eb, "-InterfaceAlias") && eb.Contains("-Program 'C:\\G\\it''s.exe'"));
+        Check("names: plain names (also ones PolicyBuilder makes) are valid", BackupPolicy.IsValidName("Steam") && BackupPolicy.IsValidName("HoYoPlay 2") && BackupPolicy.IsValidName("Game (x86) v1.2_beta-3 & co+"));
+        Check("names: quotes, $, ;, backticks, empty and over-long names are invalid",
+            !BackupPolicy.IsValidName("Bob's Game") && !BackupPolicy.IsValidName("a;b") && !BackupPolicy.IsValidName("$x") && !BackupPolicy.IsValidName("a`b")
+            && !BackupPolicy.IsValidName("") && !BackupPolicy.IsValidName(new string('a', BackupPolicy.MaxNameLength + 1)) && BackupPolicy.IsValidName(new string('a', BackupPolicy.MaxNameLength)));
+        var nlog = new List<string>();
+        var np = BackupPolicy.Parse("""
+            { "backupRules": [
+              { "name": "Steam", "action": "watch", "exes": ["steam.exe"] },
+              { "name": "Bob's Game", "action": "watch", "exes": ["bob.exe"] },
+              { "name": "x'; Remove-Item C:\\Windows -Recurse; '", "action": "watch", "exes": ["x.exe"] },
+              { "name": "Steam;", "action": "watch", "exes": ["s2.exe"] },
+              { "name": "'''", "action": "watch", "exes": ["q.exe"] } ] }
+            """, nlog.Add);
+        Check("names on load: valid names are kept, bad ones are sanitised and logged",
+            np.BackupRules.Select(r => r.Name).SequenceEqual(new[] { "Steam", "Bobs Game", "x Remove-Item CWindows -Recurse", "Steam 2", "Rule" })
+            && nlog.Count == 4 && np.BackupRules.All(r => BackupPolicy.IsValidName(r.Name)));
+        Check("names on load: the shipped policy loads unchanged with nothing logged",
+            new Func<bool>(() => { var l = new List<string>(); var sp = BackupPolicy.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "policy.json")), l.Add); return l.Count == 0 && sp.BackupRules.Count > 0; })());
         var f1 = new AppRule("A", null, "watch", Exes: new[] { "launcher.exe" }, MbPerWindow: 1, Folder: @"C:\Program Files\HoYoPlay");
         var f2 = new AppRule("B", null, "watch", Exes: new[] { "launcher.exe" }, MbPerWindow: 1, Folder: @"C:\Program Files\GRYPHLINK");
         var gf = new DownloadGuard(new[] { f1, f2 });

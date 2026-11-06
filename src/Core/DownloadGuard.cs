@@ -134,12 +134,15 @@ public class DownloadGuard
         }
     }
 
+    // Every value goes through BackupPolicy.Q: the display name is built from the rule name in policy.json and the
+    // path is whatever exe was seen, so either can hold a quote. Unquoted, "Bob's Game" breaks the command and a
+    // crafted rule name could run its own PowerShell as admin (issue #6).
     public static string BlockCommand(GuardAction a, string backupAdapter) =>
-        $"New-NetFirewallRule -DisplayName '{a.DisplayName}' -Group 'NetAutoSwitch' -Direction Outbound -Action Block " +
-        $"-Program '{a.Path.Replace("'", "''")}' -InterfaceAlias '{backupAdapter.Replace("'", "''")}' | Out-Null";
+        $"New-NetFirewallRule -DisplayName {BackupPolicy.Q(a.DisplayName)} -Group {BackupPolicy.Q("NetAutoSwitch")} -Direction Outbound -Action Block " +
+        $"-Program {BackupPolicy.Q(a.Path)} -InterfaceAlias {BackupPolicy.Q(backupAdapter)} | Out-Null";
 
     public static string UnblockCommand(GuardAction a) =>
-        $"$r = Get-NetFirewallRule -DisplayName '{a.DisplayName}' -ErrorAction SilentlyContinue; if ($r) {{ $r | Remove-NetFirewallRule -ErrorAction Stop }}; exit 0";
+        $"$r = Get-NetFirewallRule -DisplayName {BackupPolicy.Q(a.DisplayName)} -ErrorAction SilentlyContinue; if ($r) {{ $r | Remove-NetFirewallRule -ErrorAction Stop }}; exit 0";
 }
 
 /// <summary>Reads per-process network bytes (down AND up) from Windows' own network events (ETW, no driver). Needs admin.

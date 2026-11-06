@@ -56,18 +56,53 @@ public static class BackupPolicy
     });
 
     /// <summary>Parses AND validates (unknown actions, missing fields). Throws with a readable message.</summary>
-    public static PolicyFile Parse(string json)
+    public static PolicyFile Parse(string json, Action<string>? log = null)
     {
         PolicyFile p;
         try { p = JsonSerializer.Deserialize<PolicyFile>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })
                   ?? throw new InvalidDataException("empty policy"); }
         catch (JsonException e) { throw new InvalidDataException("Not valid JSON: " + e.Message); }
         if (p.BackupRules is null) throw new InvalidDataException("missing \"backupRules\" list");
+        p = p with { BackupRules = CleanNames(p.BackupRules, log ?? Paths.AppendLog) };
         ApplyCommands(p, "validate");   // throws on bad rules
         return p;
     }
 
-    static string Q(string s) => "'" + s.Replace("'", "''") + "'";
+    public const int MaxNameLength = 64;
+
+    /// <summary>Characters a rule name may use. The name ends up in firewall commands that run as admin, so only plain
+    /// name characters are let through: letters, digits, space and - _ . ( ) + &amp;. Quotes, $, ; and backticks are not.</summary>
+    public static bool IsValidName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && name.Length <= MaxNameLength && name.All(NameChar);
+
+    static bool NameChar(char c) => char.IsLetterOrDigit(c) || c is ' ' or '-' or '_' or '.' or '(' or ')' or '+' or '&';
+
+    /// <summary>Sanitises a bad name instead of rejecting the whole file, so one odd rule does not stop the user's policy
+    /// from loading. Each change is logged. A cleaned name that collides gets " 2", " 3"... because rule names are keys;
+    /// names that were already valid are never touched, so existing policies load exactly as before.</summary>
+    static List<AppRule> CleanNames(List<AppRule> rules, Action<string> log)
+    {
+        var taken = new HashSet<string>(rules.Where(r => IsValidName(r.Name)).Select(r => r.Name), StringComparer.OrdinalIgnoreCase);
+        var result = new List<AppRule>(rules.Count);
+        foreach (var r in rules)
+        {
+            if (IsValidName(r.Name)) { result.Add(r); continue; }
+            string clean = new string((r.Name ?? "").Where(NameChar).ToArray()).Trim();
+            if (clean.Length > MaxNameLength) clean = clean[..MaxNameLength].TrimEnd();
+            if (clean.Length == 0) clean = "Rule";
+            string name = clean;
+            for (int i = 2; !taken.Add(name); i++)
+            {
+                string suffix = " " + i;
+                name = (clean.Length + suffix.Length > MaxNameLength ? clean[..(MaxNameLength - suffix.Length)] : clean) + suffix;
+            }
+            log($"policy: rule name \"{r.Name}\" is not allowed (letters, digits, space and - _ . ( ) + & only, max {MaxNameLength}); using \"{name}\"");
+            result.Add(r with { Name = name });
+        }
+        return result;
+    }
+
+    internal static string Q(string s) => "'" + s.Replace("'", "''") + "'";
 
     public static List<string> ApplyCommands(PolicyFile p, string backupAdapter)
     {
