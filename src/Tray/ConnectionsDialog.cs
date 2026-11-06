@@ -86,8 +86,8 @@ sealed class ConnectionsPanel : Panel
         _makeMain = Ui.Btn(Ui.Home, "Make Main", "Make the selected network a main network.", () => SetRole(NetworkRole.Main));
         _makeBackup = Ui.Btn(Ui.Phone, "Make Backup", "Make the selected network a backup network (your phone).", () => SetRole(NetworkRole.Backup));
         _unlabel = Ui.Btn(Ui.Undo, "Unlabel", "Take the selected network out of both groups. It is treated as backup until you sort it again.", () => SetRole(NetworkRole.Unlabelled));
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Ui.Bg, WrapContents = false, Margin = new Padding(0, 0, Ui.Gap, 0), Padding = new Padding(2, 2, 0, 0) };
-        actions.Controls.AddRange(new Control[] { _selName, _selRole, _makeMain, _makeBackup, _unlabel });
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Ui.Bg, WrapContents = false, Margin = new Padding(0, 0, Ui.Gap, 0), Padding = new Padding(0) };
+        actions.Controls.AddRange(new Control[] { _makeMain, _makeBackup, _unlabel });   // the highlighted row shows what is selected; no sentence repeats it
 
         // adapters: only matter when the groups cannot decide, so they stay folded behind a switch
         _adapterCard.SetHint("The groups above decide which adapter is main: the one on a main network. These choices are used only when they can't (for example no main network is connected).");
@@ -107,9 +107,9 @@ sealed class ConnectionsPanel : Panel
         var grid = _grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         int Row(float h, SizeType st = SizeType.Absolute) { grid.RowStyles.Add(new RowStyle(st, h)); return grid.RowStyles.Count - 1; }
-        int r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
+        int r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // the buttons sit above the lists they act on
+        r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
         _lowerRow = Row(44, SizeType.Percent); grid.Controls.Add(_noneCard, 0, _lowerRow); grid.Controls.Add(_barredCard, 1, _lowerRow);
-        r = Row(48); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);
         _adapterRow = Row(AdapterRowHeight(false)); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
         grid.RowCount = grid.RowStyles.Count;
 

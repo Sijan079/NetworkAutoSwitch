@@ -140,12 +140,15 @@ sealed class NetworksList : KitControl
     protected override void OnMouseMove(MouseEventArgs e) { int h = Hit(e.Location); if (h != _hover) { _hover = h; Invalidate(); } Cursor = h >= 0 ? Cursors.Hand : Cursors.Default; base.OnMouseMove(e); }
     protected override void OnMouseLeave(EventArgs e) { if (_hover != -1) { _hover = -1; Invalidate(); } base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { Focus(); int h = Hit(e.Location); if (h >= 0) Picked?.Invoke(_rows[h].Name); base.OnMouseDown(e); }
-    protected override void OnMouseWheel(MouseEventArgs e)
+    /// <summary>Scrolls by a wheel delta (positive = up). Returns true when the list moved, so the page only scrolls once the list is at its end.</summary>
+    public bool Wheel(int delta)
     {
-        int old = _offset; _offset -= e.Delta / 120 * (RowH + RowGap); ClampOffset();
-        if (old != _offset) { _hover = Hit(PointToClient(MousePosition)); Invalidate(); }
-        base.OnMouseWheel(e);
+        int old = _offset; _offset -= delta * (RowH + RowGap) / 120; ClampOffset();   // pixel-exact, so a touchpad's small steps scroll too
+        if (old == _offset) return false;
+        _hover = Hit(PointToClient(MousePosition)); Invalidate();
+        return true;
     }
+    protected override void OnMouseWheel(MouseEventArgs e) { if (!Wheel(e.Delta)) base.OnMouseWheel(e); }
 
     protected override bool IsInputKey(Keys k) => k is Keys.Up or Keys.Down or Keys.Home or Keys.End || base.IsInputKey(k);
     protected override void OnKeyDown(KeyEventArgs e)

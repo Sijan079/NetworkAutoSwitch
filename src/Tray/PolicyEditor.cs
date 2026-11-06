@@ -45,7 +45,7 @@ sealed class PolicyEditor : UserControl
     readonly KitButton _remove;
 
     /// <summary>The status line under the buttons (the page's Say writes to it).</summary>
-    public Label Status { get; } = new() { Dock = DockStyle.Top, Height = 28, Padding = new Padding(0, 8, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), UseMnemonic = false, AutoEllipsis = true };
+    public Label Status { get; } = new() { Dock = DockStyle.Top, Height = 24, Padding = new Padding(0, 4, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), UseMnemonic = false, AutoEllipsis = true };
 
     readonly List<Row> _rows = new();
     readonly List<(Control Part, string[] Actions)> _parts = new();    // the editor's sections; an empty list = shown for every action
@@ -154,7 +154,8 @@ sealed class PolicyEditor : UserControl
         Part(pathField, Ui.Gap, "block", "throttle"); Part(kbpsRow, Ui.Gap, "throttle");
         Part(ownRow, Ui.Gap, "watch"); Part(ownFields, Ui.Gap, "watch");
         var buttons = new Panel { Height = Ui.BtnH, BackColor = Ui.CardBg, Padding = new Padding(0, 0, 0, 0) }; buttons.Controls.Add(_actions);
-        var stack = _parts.Select(p => p.Part.Parent!).Concat(new Control[] { Wrap(buttons, 4), Status }).ToList();
+        // the buttons (and the status line they report to) come first: they act on the form below them
+        var stack = new Control[] { new Panel { Height = 8, BackColor = Ui.CardBg }, Wrap(buttons, 4), Status }.Concat(_parts.Select(p => p.Part.Parent!)).ToList();
         for (int i = stack.Count - 1; i >= 0; i--) { stack[i].Dock = DockStyle.Top; right.Body.Controls.Add(stack[i]); }   // Dock=Top stacks the LAST added on top
 
         grid.Controls.Add(left, 0, 0); grid.Controls.Add(right, 1, 0);

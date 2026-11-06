@@ -78,6 +78,7 @@ sealed class WheelRouter : IMessageFilter
         for (; c is not null; c = c.Parent)
         {
             if (c is ListView lv && CanScroll(lv, delta)) return false;        // let the list scroll itself
+            if (c is NetworksList nl && nl.Wheel(delta)) return true;          // our own list scrolls itself; at its end the wheel passes on to the page
             if (c is ScrollSurface s) return s.Wheel(delta);
         }
         return false;

@@ -234,7 +234,7 @@ sealed partial class MainForm
         _blockedList.SelectedIndexChanged += (_, _) => UpdateBlockedButtons();
         var header = new TableHeader(_blockedList);
 
-        // the action bar under the table: the grace time and the actions for blocked rows on the left, those for allowed rows on the right
+        // the action bar above the table: the grace time and the actions for blocked rows on the left, those for allowed rows on the right
         foreach (var g in GraceLabels) _grace.Items.Add(g);
         _grace.SelectedIndex = 0;
         _grace.ItemHeight = 30; _grace.Width = 112; _grace.Margin = new Padding(0, 0, 8, 0);       // 36 px tall, like the buttons next to it
@@ -249,7 +249,7 @@ sealed partial class MainForm
         left.Controls.Add(_grace); left.Controls.Add(_unblockBtn); left.Controls.Add(_unblockAllBtn);
         right.Controls.Add(_watchAgainBtn); right.Controls.Add(_blockNowBtn);
         _unblockAllBtn.Margin = _blockNowBtn.Margin = new Padding(0); _unblockBtn.Margin = _watchAgainBtn.Margin = new Padding(0, 0, 8, 0);
-        var bar = new Panel { Dock = DockStyle.Bottom, Height = 36 + 14, BackColor = Ui.CardBg, Padding = new Padding(ProgramsTable.CellPad, 14, ProgramsTable.CellPad, 0) };
+        var bar = new Panel { Dock = DockStyle.Top, Height = 36 + 12, BackColor = Ui.CardBg, Padding = new Padding(ProgramsTable.CellPad, 0, ProgramsTable.CellPad, 12) };   // above the table the buttons act on
         bar.Controls.Add(left); bar.Controls.Add(right);
         _blockedSide = left;
 
@@ -257,7 +257,7 @@ sealed partial class MainForm
         _blockedEmpty.TextAlign = ContentAlignment.MiddleCenter; _blockedEmpty.Font = Ui.UiFont(9.75f); _blockedEmpty.Padding = new Padding(0);
 
         _blockedCard.Body.Padding = new Padding(6, 0, 6, 12);
-        _blockedCard.Body.Controls.Add(_blockedList); _blockedCard.Body.Controls.Add(_blockedEmpty); _blockedCard.Body.Controls.Add(header); _blockedCard.Body.Controls.Add(bar);
+        _blockedCard.Body.Controls.Add(_blockedList); _blockedCard.Body.Controls.Add(_blockedEmpty); _blockedCard.Body.Controls.Add(header); _blockedCard.Body.Controls.Add(bar);   // docks in reverse: the bar is on top, then the column header
         ShowBlockedList(0);
         return _blockedCard;
     }
