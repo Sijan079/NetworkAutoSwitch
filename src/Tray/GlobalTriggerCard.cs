@@ -9,7 +9,7 @@ sealed class GlobalTriggerCard : Card
     /// <summary>The height the card needs: header, one row of kit fields, padding.</summary>
     public const int PreferredHeight = 4 + 48 + 4 + 58 + 14 + 4;
 
-    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 0.5m, Value = 2 };
+    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 9999, Increment = 0.5m, Value = 2 };
     readonly NoWheelNumeric _win = new() { Minimum = 1, Maximum = 600, Value = 10 };
     readonly Label _note = new() { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), Margin = new Padding(4, 32, 0, 0), UseMnemonic = false };
     bool _quiet;

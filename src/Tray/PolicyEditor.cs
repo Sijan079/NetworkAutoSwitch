@@ -35,9 +35,9 @@ sealed class PolicyEditor : UserControl
     readonly Label _nameProblem = new() { Dock = DockStyle.Fill, ForeColor = Ui.Red, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), UseMnemonic = false, AutoEllipsis = true };
     readonly Segmented _action = new("Watch", "Block", "Upload Cap");
     readonly Label _explain = new() { Dock = DockStyle.Top, Height = 24, Padding = new Padding(0, 6, 0, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), UseMnemonic = false, AutoEllipsis = true };
-    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 1 },
+    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 9999, Increment = 1 },
                             _win = new() { Minimum = 1, Maximum = 600 },
-                            _kbps = new() { Minimum = 1, Maximum = 1_000_000, Increment = 100 };
+                            _kbps = new() { Minimum = 1, Maximum = 9999, Increment = 100 };
     readonly Label _rate = new() { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), Padding = new Padding(0, 32, 0, 0) };
     readonly GlobalTriggerCard _global;      // the global trigger (shared by every watch rule that has no trigger of its own), on the same page
     readonly Toggle _own = new();            // on = this rule has its own trigger (off = it follows the global one)

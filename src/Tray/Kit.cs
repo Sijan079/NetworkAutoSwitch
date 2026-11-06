@@ -326,8 +326,8 @@ sealed class Field : Panel
             _repeat.Tick += (_, _) => { _repeat.Interval = 70; Step(_downBtn); };      // holding a button keeps stepping
         }
         int SuffixW => _suffix.Length == 0 ? 0 : TextRenderer.MeasureText(_suffix, Ui.UiFont(9f), Size.Empty, TextFormatFlags.NoPadding).Width + 12;
-        int StepperW => _num is null ? 0 : StepEdge + StepBtn * 2 + StepGap + 6;      // room the two buttons take at the right edge
-        Rectangle MinusRect => new(Width - StepEdge - StepBtn * 2 - StepGap, (Height - StepBtn) / 2, StepBtn, StepBtn);
+        int StepSide => _num is null ? 0 : StepEdge + StepBtn + 8;      // room one button takes at each end of the box (the minus at the start, the plus at the end)
+        Rectangle MinusRect => new(StepEdge, (Height - StepBtn) / 2, StepBtn, StepBtn);
         Rectangle PlusRect => new(Width - StepEdge - StepBtn, (Height - StepBtn) / 2, StepBtn, StepBtn);
         int HitBtn(Point p) => _num is null ? 0 : MinusRect.Contains(p) ? 1 : PlusRect.Contains(p) ? 2 : 0;
         bool CanStep(int btn) => _num is not null && _num.Enabled && (btn == 1 ? _num.Value > _num.Minimum : _num.Value < _num.Maximum);
@@ -346,7 +346,8 @@ sealed class Field : Panel
                 return;
             }
             int h = _input.PreferredSize.Height, inset = _input is ComboBox ? 2 : 12;
-            _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW - StepperW), h);
+            if (_num is not null) _input.SetBounds(StepSide, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - StepSide * 2 - SuffixW), h);      // between the two buttons, left of the unit
+            else _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW), h);
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -356,7 +357,7 @@ sealed class Field : Panel
             if (_path is null || _pathSize != Size) { _path?.Dispose(); _path = Ui.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 8); _pathSize = Size; }
             g.FillPath(Ui.Brush(Ui.InputBg), _path);
             g.DrawPath(Ui.Pen(_input.ContainsFocus ? Ui.Green : Ui.Border), _path);
-            if (_suffix.Length > 0) TextRenderer.DrawText(g, _suffix, Ui.UiFont(9f), new Rectangle(Width - StepperW - SuffixW - 4, 0, SuffixW, Height), Ui.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
+            if (_suffix.Length > 0) TextRenderer.DrawText(g, _suffix, Ui.UiFont(9f), new Rectangle(Width - StepSide - SuffixW - 4, 0, SuffixW, Height), Ui.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
             if (_num is not null) { PaintStep(g, MinusRect, 1); PaintStep(g, PlusRect, 2); }
         }
 
