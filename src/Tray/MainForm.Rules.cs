@@ -27,9 +27,9 @@ sealed partial class MainForm
         _global.Dock = DockStyle.Fill; _global.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
 
         _editor.Dock = DockStyle.Fill; _editor.Margin = new Padding(0);
-        _editor.AddAction(Ui.Btn(Ui.Check, "Save And Apply", "Check every rule and the global trigger, save them and apply them now.", SavePolicy, BtnKind.Primary));
+        _editor.AddAction(_rulesSave = Ui.Btn(Ui.Check, "Save And Apply", "Check every rule and the global trigger, save them and apply them now.", SavePolicy, BtnKind.Primary));
         _editor.AddAction(Ui.Btn(Ui.Code, "", "Edit As JSON: the same rules as text (for advanced use). Nothing is saved until you click Save And Apply.", EditJson));
-        _editor.AddAction(Ui.Btn(Ui.Undo, "", "Revert: discard unsaved changes.", RevertAll));
+        _editor.AddAction(_rulesRevert = Ui.Btn(Ui.Undo, "", "Revert: discard unsaved changes.", RevertAll));
         _policyStatus.Add(_editor.Status);
 
         grid.Controls.Add(header, 0, 0); grid.Controls.Add(_global, 0, 1); grid.Controls.Add(_editor, 0, 2);
@@ -71,8 +71,14 @@ sealed partial class MainForm
         catch (Exception e) { Say("Could not read policy: " + e.Message, true); }
     }
 
+    KitButton? _rulesSave, _rulesRevert;
+
+    /// <summary>A save is running: Save And Apply shows a spinner and ignores clicks, Revert is disabled.</summary>
+    void SetRulesSaving(bool on) { if (_rulesSave is not null) _rulesSave.Busy = on; if (_rulesRevert is not null) _rulesRevert.Enabled = !on; }
+
     void SavePolicy()
     {
+        if (_rulesSave?.Busy == true) return;
         string json;
         try
         {
@@ -86,11 +92,13 @@ sealed partial class MainForm
             if (File.Exists(_policyPath)) File.Copy(_policyPath, _policyPath + ".bak", true);
             File.WriteAllText(_policyPath, json);
             LoadPolicy();                       // show what was really saved
-            Say("Saving...", false);
-            Task.Run(() =>
+            Say("", false);
+            SetRulesSaving(true);          // the spinner on the button says it is working; no sentence repeats it
+            Task.Run(async () =>
             {
-                try { _engine.ReloadPolicy(); OnUi(() => Say("Saved and applied.", false, ok: true)); }
-                catch (Exception e) { OnUi(() => Say("Saved, but applying failed: " + e.Message, true)); }
+                var shown = Task.Delay(700);          // keep the spinner up long enough to be seen
+                try { _engine.ReloadPolicy(); await shown; OnUi(() => { SetRulesSaving(false); _rulesSave?.Flash(Ui.Check); }); }
+                catch (Exception e) { await shown; OnUi(() => { SetRulesSaving(false); Say("Saved, but applying failed: " + e.Message, true); }); }
             });
         }
         catch (Exception e) { Say("Could not save: " + e.Message, true); }

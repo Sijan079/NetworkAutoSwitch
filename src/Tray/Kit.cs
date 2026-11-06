@@ -44,11 +44,31 @@ sealed class KitButton : Button
     bool _hover, _down;
     GraphicsPath? _path; Size _pathSize;
 
+    // Busy: a spinner takes the icon's place and the button ignores clicks (a save is running). It keeps its colours, so it does not
+    // look "dead"; the spinner is the sign that work is going on. Flash(): a short tick in the icon's place when the work is done.
+    bool _busy; float _spin;
+    string _flash = "";
+    readonly System.Windows.Forms.Timer _spinTimer = new() { Interval = 30 };
+    readonly System.Windows.Forms.Timer _flashTimer = new() { Interval = 1200 };
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Busy
+    {
+        get => _busy;
+        set { if (_busy == value) return; _busy = value; _hover = _down = false; if (value) { _flash = ""; _flashTimer.Stop(); _spinTimer.Start(); } else _spinTimer.Stop(); Invalidate(); }
+    }
+    /// <summary>Shows <paramref name="glyph"/> in the icon's place for a moment (a tick after a save), then goes back to the normal icon.</summary>
+    public void Flash(string glyph, int ms = 1200) { if (_busy) return; _flash = glyph; _flashTimer.Stop(); _flashTimer.Interval = ms; _flashTimer.Start(); Invalidate(); }
+
     public KitButton()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.SupportsTransparentBackColor, true);
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; UseVisualStyleBackColor = false; Cursor = Cursors.Hand;
+        _spinTimer.Tick += (_, _) => { _spin = (_spin + 16) % 360; Invalidate(); };
+        _flashTimer.Tick += (_, _) => { _flashTimer.Stop(); _flash = ""; Invalidate(); };
+        VisibleChanged += (_, _) => { if (!Visible) _spinTimer.Stop(); else if (_busy) _spinTimer.Start(); };      // nothing animates while it is hidden
     }
+
+    protected override void OnClick(EventArgs e) { if (!_busy) base.OnClick(e); }
 
     (Color Bg, Color Fg, Color Edge) Colors()
     {
@@ -60,6 +80,7 @@ sealed class KitButton : Button
             _ => (Ui.Raised, Ui.Text, Ui.Border),
         };
         if (!Enabled) return (bg, Ui.Mix(fg, bg, 0.45f), Ui.Mix(edge, bg, 0.5f));
+        if (_busy) return (bg, fg, edge);       // no hover or press effect while it works
         if (_down) bg = Kind == BtnKind.Danger ? Ui.Tint(Ui.Red, 0.26f) : Ui.Mix(Ui.Text, bg, Kind == BtnKind.Secondary ? 0.14f : 0.22f);
         else if (_hover) bg = Kind == BtnKind.Danger ? Ui.Tint(Ui.Red, 0.14f) : Ui.Mix(Ui.Text, bg, Kind == BtnKind.Secondary ? 0.07f : 0.12f);
         return (bg, fg, edge);
@@ -78,11 +99,17 @@ sealed class KitButton : Button
 
         // icon + text, centred together
         var text = Text; const int icon = 16, gap = 8;
-        bool hasIcon = Glyph.Length > 0;
+        bool hasIcon = Glyph.Length > 0 || _busy;
         var size = text.Length > 0 ? TextRenderer.MeasureText(g, text, Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix) : Size.Empty;
         int total = (hasIcon ? icon : 0) + (hasIcon && text.Length > 0 ? gap : 0) + size.Width;
         int x = (Width - total) / 2;
-        if (hasIcon) { g.DrawImage(Ui.GlyphCached(Glyph, icon + 2, fg), x - 1, (Height - icon - 2) / 2); x += icon + gap; }
+        if (_busy)
+        {
+            // a 270 degree arc turning round: same 16 px box and place as the icon, so the label does not move
+            g.DrawArc(Ui.Pen(fg, 2f), new RectangleF(x + 1, (Height - icon) / 2f + 1, icon - 2, icon - 2), _spin, 270);
+            x += icon + gap;
+        }
+        else if (hasIcon) { g.DrawImage(Ui.GlyphCached(_flash.Length > 0 ? _flash : Glyph, icon + 2, fg), x - 1, (Height - icon - 2) / 2); x += icon + gap; }
         if (text.Length > 0) TextRenderer.DrawText(g, text, Font, new Rectangle(x, 0, size.Width + 2, Height), fg, TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
     }
 
@@ -99,7 +126,7 @@ sealed class KitButton : Button
     protected override void OnMouseUp(MouseEventArgs e) { _down = false; Invalidate(); base.OnMouseUp(e); }
     protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
     protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
-    protected override void Dispose(bool disposing) { if (disposing) _path?.Dispose(); base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { _path?.Dispose(); _spinTimer.Dispose(); _flashTimer.Dispose(); } base.Dispose(disposing); }
 }
 
 /// <summary>A small rounded label: a log kind, a rule action, IN USE / STANDBY. Outlined by default, filled = the role colour behind OnAccent text.</summary>

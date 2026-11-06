@@ -89,7 +89,7 @@ sealed class AdapterCard : Card
             bool filled = _o.Fill is not null;
             Color text = filled ? Ui.OnAccent : Ui.Text;
             Color muted = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.72f) : Ui.Muted;
-            Color role = filled ? Ui.OnAccent : _o._role;
+            Color role = filled ? Ui.OnAccent : _o._inUse ? _o._role : Ui.Muted;      // a connection that is not in use is muted: no teal or amber, whatever its status
             Color line = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.25f) : Ui.Border;
             int w = Width;
 
@@ -113,7 +113,7 @@ sealed class AdapterCard : Card
                 int x = i * (col + 12);
                 string label = i == 0 ? "Status" : i == 1 ? "Latency" : "Uptime";
                 string value = i == 0 ? _o._status : i == 1 ? _o._latency : _o._uptime;
-                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._statusInk) : text;      // red on teal fails contrast: on a fill it is OnAccent
+                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._inUse ? _o._statusInk : Ui.Muted) : text;      // red on teal fails contrast: on a fill it is OnAccent; a standby card stays muted even when it is Down
                 TextRenderer.DrawText(g, label, Ui.UiFont(8.25f), new Rectangle(x, sy, col, 16), muted, Line);
                 TextRenderer.DrawText(g, value, Ui.UiFont(11.25f, Weight.Bold), new Rectangle(x, sy + 16, col, 24), ink, Line);
             }

@@ -27,7 +27,7 @@ sealed class ConnectionsPanel : Panel
                           _lsBarred = new(Ui.Red, "");
     readonly Label _selName = new() { AutoSize = true, ForeColor = Ui.Text, BackColor = Ui.Bg, Font = Ui.UiFont(9.75f, Weight.SemiBold), Margin = new Padding(0, 9, 4, 0), UseMnemonic = false };
     readonly Label _selRole = new() { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.Bg, Font = Ui.UiFont(9.75f), Margin = new Padding(0, 9, 14, 0), UseMnemonic = false };
-    readonly KitButton _makeMain, _makeBackup, _unlabel, _save;
+    readonly KitButton _makeMain, _makeBackup, _unlabel, _save, _revert;
     readonly Card _adapterCard = new(Ui.Settings, "Adapters");
     readonly Toggle _chooseAdapters = new() { Margin = new Padding(0, 3, 0, 0) };
     readonly Label _autoLine = new() { Dock = DockStyle.Fill, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), UseMnemonic = false, AutoEllipsis = true };
@@ -56,7 +56,7 @@ sealed class ConnectionsPanel : Panel
 
         // header: Save and Revert on the right, with the save state next to them
         _save = Ui.Btn(Ui.Save, "Save", "Save your networks and adapters and apply them now.", Save, BtnKind.Primary);
-        var revert = Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", Reload);
+        var revert = _revert = Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", Reload);
         _header.AddAction(_status); _header.AddAction(revert); _header.AddAction(_save);
 
         // mode: only HOW the choices are stored. The groups below mean the same in both modes, so this sits quietly under the header.
@@ -107,8 +107,8 @@ sealed class ConnectionsPanel : Panel
         var grid = _grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         int Row(float h, SizeType st = SizeType.Absolute) { grid.RowStyles.Add(new RowStyle(st, h)); return grid.RowStyles.Count - 1; }
-        int r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
-        r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // the buttons sit on top of the Unlabelled list (where most sorting starts)
+        int r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // on top of all the lists: the buttons sort networks in Main, Backup and Unlabelled alike
+        r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
         _lowerRow = Row(44, SizeType.Percent); grid.Controls.Add(_noneCard, 0, _lowerRow); grid.Controls.Add(_barredCard, 1, _lowerRow);
         _adapterRow = Row(AdapterRowHeight(false)); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
         grid.RowCount = grid.RowStyles.Count;
@@ -276,13 +276,24 @@ sealed class ConnectionsPanel : Panel
         _save.Enabled = !same;
     }
 
+    /// <summary>A save is running: Save shows a spinner and ignores clicks, Revert is disabled (it would undo what is being saved).</summary>
+    void SetSaving(bool on) { _save.Busy = on; _revert.Enabled = !on; }
+
     void Save()
     {
+        if (_save.Busy) return;
         var (m, b) = (Picked(_main), Picked(_backup));
         var bl = _work[ListMode.Blacklist]; var wl = _work[ListMode.Whitelist];
         var tables = new NetworkTables(_modeNow, bl.Main, bl.Backup, wl.Main, wl.Backup);
-        _dirty = false; _status.Text = "Saved. Applying..."; _status.ForeColor = Ui.Green;
-        Task.Run(() => { try { _engine.SetNetworkTables(tables); _engine.SetAdapterChoice(m, b); } catch (Exception e) { Paths.AppendLog("Choosing connections failed: " + e.Message); } });   // the engine applies it in the background
+        _dirty = false; _status.Text = "";
+        SetSaving(true);          // a spinner on Save, and Save / Revert ignore clicks until it is done
+        Task.Run(async () =>
+        {
+            var shown = Task.Delay(700);          // the change itself is quick; keep the spinner up long enough to be seen
+            try { _engine.SetNetworkTables(tables); _engine.SetAdapterChoice(m, b); } catch (Exception e) { Paths.AppendLog("Choosing connections failed: " + e.Message); }
+            await shown;
+            if (IsHandleCreated && !IsDisposed) BeginInvoke(() => { SetSaving(false); _save.Flash(Ui.Check); });
+        });   // the engine applies it in the background
         _saved?.Invoke();
     }
 }
