@@ -41,18 +41,89 @@ public sealed class AppSettings
 
     public static string DefaultFile => Path.Combine(Paths.DataDir, "settings.json");
 
-    /// <summary>Never throws: a missing or damaged file just gives the defaults.</summary>
+    // The UI thread and the engine thread both write this file. One lock for the whole process makes every
+    // read-change-write a single step, so neither can read the other's half-written file or undo its change.
+    static readonly object _lock = new();
+    // The last copy known to be good, per file (as JSON so callers never share one mutable object).
+    // If the file and its .bak are both unreadable, this stops a save from putting the defaults over real settings.
+    static readonly Dictionary<string, string> _lastGood = new(StringComparer.OrdinalIgnoreCase);
+    static readonly JsonSerializerOptions _readOpts = new() { PropertyNameCaseInsensitive = true };
+    static readonly JsonSerializerOptions _writeOpts = new() { WriteIndented = true };
+
+    /// <summary>Never throws. Missing file = defaults. A damaged file falls back to its .bak, then to the last good copy
+    /// this process saw, and only then to the defaults; each fallback is logged.</summary>
     public static AppSettings Load(string? file = null)
     {
-        try { return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(file ?? DefaultFile), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new(); }
-        catch { return new(); }
+        var path = Path.GetFullPath(file ?? DefaultFile);
+        lock (_lock)
+        {
+            if (!File.Exists(path)) return new();
+            if (TryRead(path, out var s, out var why)) { _lastGood[path] = JsonSerializer.Serialize(s, _writeOpts); return s; }
+            Paths.AppendLog($"settings: {path} could not be read ({why})");
+            if (TryRead(path + ".bak", out var b, out _))
+            {
+                Paths.AppendLog("settings: using the backup copy (.bak)");
+                _lastGood[path] = JsonSerializer.Serialize(b, _writeOpts);
+                return b;
+            }
+            if (_lastGood.TryGetValue(path, out var json) && JsonSerializer.Deserialize<AppSettings>(json, _readOpts) is { } mem)
+            {
+                Paths.AppendLog("settings: no usable backup, keeping the settings already in memory");
+                return mem;
+            }
+            Paths.AppendLog("settings: no usable backup, using the defaults");
+            return new();
+        }
     }
 
+    static bool TryRead(string path, out AppSettings s, out string why)
+    {
+        s = new(); why = "";
+        try
+        {
+            if (!File.Exists(path)) { why = "missing"; return false; }
+            var r = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), _readOpts);
+            if (r is null) { why = "empty"; return false; }
+            s = r; return true;
+        }
+        catch (Exception e) { why = e.Message; return false; }
+    }
+
+    /// <summary>Never throws (a failed save is logged). The file is replaced in one step, so a reader sees the old
+    /// or the new settings, never half of each; the previous good file is kept as .bak.</summary>
     public void Save(string? file = null)
     {
-        try { File.WriteAllText(file ?? DefaultFile, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); } catch { }
+        var path = Path.GetFullPath(file ?? DefaultFile);
+        lock (_lock)
+        {
+            var json = JsonSerializer.Serialize(this, _writeOpts);
+            // Unique name: the CLI and the tray are separate processes and do not share the lock.
+            var tmp = $"{path}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                File.WriteAllText(tmp, json);
+                for (int attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        if (!File.Exists(path)) File.Move(tmp, path);
+                        // A damaged file must not become the backup, or it would push out the good one.
+                        else File.Replace(tmp, path, TryRead(path, out _, out _) ? path + ".bak" : null, true);
+                        break;
+                    }
+                    // Antivirus or the other process can hold the file for a moment; that is worth a short retry.
+                    catch (IOException) when (attempt < 5) { Thread.Sleep(50 * attempt); }
+                }
+                _lastGood[path] = json;
+            }
+            catch (Exception e) { Paths.AppendLog($"settings: could not save {path} ({e.Message})"); }
+            finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } }
+        }
     }
 
-    /// <summary>Read the file, change one thing, write it back: other settings are kept.</summary>
-    public static void Update(Action<AppSettings> change, string? file = null) { var s = Load(file); change(s); s.Save(file); }
+    /// <summary>Read the file, change one thing, write it back: other settings are kept, even when two threads do this at once.</summary>
+    public static void Update(Action<AppSettings> change, string? file = null)
+    {
+        lock (_lock) { var s = Load(file); change(s); s.Save(file); }
+    }
 }

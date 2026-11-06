@@ -142,7 +142,7 @@ if (args.Contains("--engine-test"))
         Check("no names at all: the lookup is broken, so nothing is blocked, and it is said once", !noNames.Any(l => l.Contains("PROTECTING")) && noNames.Count(l => l.Contains("Windows gives no network names")) == 1);
     }
     else Console.WriteLine("SKIP  protected-main tests (no second adapter to pair with a healthy one)");
-    File.Delete(tmp);
+    File.Delete(tmp); File.Delete(tmp + ".bak");
     Console.WriteLine(fails == 0 ? "ENGINE TEST PASSED" : $"{fails} FAILED");
     return fails;
 }
@@ -247,6 +247,46 @@ static class SelfTest
             File.WriteAllText(f, "not json");
             Check("budget: a damaged file gives a fresh count", DataBudget.Load(f, day1).Bytes == 0);
             File.Delete(f);
+            // ---- settings file: lock, atomic save, recovery (temp folder, never the real ProgramData file) ----
+            {
+                var dir = Path.Combine(Path.GetTempPath(), "nas-settings-test-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(dir);
+                var sf = Path.Combine(dir, "settings.json");
+                try
+                {
+                    Check("settings: a missing file gives the defaults", AppSettings.Load(sf).Theme == "System");
+                    AppSettings.Update(s => { s.Theme = "Dark"; s.RecoverSeconds = 42; }, sf);
+                    Check("settings: a change is saved and read back", AppSettings.Load(sf) is { Theme: "Dark", RecoverSeconds: 42 });
+                    AppSettings.Update(s => s.Mode = "StayPrimary", sf);
+                    Check("settings: the previous file is kept as .bak", File.Exists(sf + ".bak") && AppSettings.Load(sf + ".bak").Mode == "Auto" && AppSettings.Load(sf + ".bak").Theme == "Dark");
+
+                    const int jobs = 64;
+                    Parallel.For(0, jobs, new ParallelOptions { MaxDegreeOfParallelism = 16 }, i =>
+                    {
+                        if (i % 2 == 0) AppSettings.Update(s => s.BlacklistMainNetworks.Add("net" + i), sf);
+                        else AppSettings.Update(s => { s.LastPrimary = "p" + i; s.BlacklistBackupNetworks.Add("net" + i); }, sf);
+                    });
+                    var after = AppSettings.Load(sf);
+                    Check($"settings: {jobs} parallel updates all survive (none lost to another thread)",
+                        after.BlacklistMainNetworks.Count == jobs / 2 && after.BlacklistBackupNetworks.Count == jobs / 2
+                        && after.Theme == "Dark" && after.RecoverSeconds == 42 && after.Mode == "StayPrimary");
+                    Check("settings: no temp files are left behind", Directory.GetFiles(dir, "*.tmp").Length == 0);
+
+                    File.WriteAllText(sf, "{ \"Theme\": \"Li");   // what a half-written file looks like
+                    Check("settings: a damaged file falls back to the .bak, not the defaults", AppSettings.Load(sf).Theme == "Dark");
+                    AppSettings.Update(s => s.MuteNotifications = true, sf);
+                    var fixedUp = AppSettings.Load(sf);
+                    Check("settings: an update after damage keeps the user's settings", fixedUp.MuteNotifications && fixedUp.Theme == "Dark" && fixedUp.RecoverSeconds == 42);
+                    Check("settings: the damaged file never becomes the .bak", AppSettings.Load(sf + ".bak").Theme == "Dark");
+
+                    AppSettings.Update(s => s.Theme = "Light", sf);
+                    File.WriteAllText(sf, "not json"); File.Delete(sf + ".bak");
+                    Check("settings: damaged file and no .bak keeps the last good copy in memory", AppSettings.Load(sf).Theme == "Light");
+                    AppSettings.Update(s => s.DailyCapMB = 500, sf);
+                    Check("settings: saving then writes the good copy back, not the defaults", AppSettings.Load(sf) is { Theme: "Light", DailyCapMB: 500, RecoverSeconds: 42 });
+                }
+                finally { try { Directory.Delete(dir, true); } catch { } }
+            }
             Check("counter: first reading adds nothing", CounterDelta.Next(null, 5000) == 0);
             Check("counter: normal growth", CounterDelta.Next(5000, 5600) == 600);
             Check("counter: a counter that went down (adapter reset) adds nothing", CounterDelta.Next(5000, 40) == 0);
@@ -688,8 +728,8 @@ static class SelfTest
         AppSettings.Update(s => s.Theme = "Dark", tmp); AppSettings.Update(s => s.Mode = "StayBackup", tmp);
         var ls = AppSettings.Load(tmp);
         Check("settings: theme and mode are saved together and neither wipes the other", ls.Theme == "Dark" && ls.ConnectionMode == ConnectionMode.StayBackup);
-        File.WriteAllText(tmp, "{ not json"); var bad = AppSettings.Load(tmp); File.Delete(tmp);
-        Check("settings: a damaged file gives the defaults instead of an error", bad.Theme == "System" && bad.ConnectionMode == ConnectionMode.Auto && AppSettings.Load(tmp).ConnectionMode == ConnectionMode.Auto);
+        File.WriteAllText(tmp, "{ not json"); var bad = AppSettings.Load(tmp); File.Delete(tmp); File.Delete(tmp + ".bak");
+        Check("settings: a damaged file gives the backup copy instead of an error (and a missing one the defaults)", bad.Theme == "Dark" && AppSettings.Load(tmp).ConnectionMode == ConnectionMode.Auto && AppSettings.Load(tmp).Theme == "System");
 
         // route metrics: the preferred adapter's default route is normalized so a poisoned route metric cannot beat it
         var prefer = MetricSwitcher.PreferCommands("Wi-Fi", "Ethernet 2");
