@@ -7,7 +7,7 @@ namespace NetworkAutoSwitch.Tray;
 sealed class GlobalTriggerCard : Card
 {
     /// <summary>The height the card needs: header, one row of kit fields, padding.</summary>
-    public const int PreferredHeight = 4 + 44 + 2 + 58 + 14 + 4;
+    public const int PreferredHeight = 4 + 48 + 4 + 58 + 14 + 4;
 
     readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 0.5m, Value = 2 };
     readonly NoWheelNumeric _win = new() { Minimum = 1, Maximum = 600, Value = 10 };
@@ -22,7 +22,7 @@ sealed class GlobalTriggerCard : Card
         SetHint("Every watch rule uses this unless you give it its own.\nA watched program that receives more than this is blocked until you unblock it on the Dashboard.");
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Margin = new Padding(0) };
         flow.Controls.Add(new Field("Block When Downloading More Than", _mb, "MB") { Width = 290, Margin = new Padding(0, 0, 14, 0) });
-        flow.Controls.Add(new Field("Within", _win, "seconds") { Width = 190, Margin = new Padding(0, 0, 14, 0) });
+        flow.Controls.Add(new Field("Within", _win, "seconds") { Width = 230, Margin = new Padding(0, 0, 14, 0) });      // the box needs the unit, the two buttons and the ~20 px a hidden spinner keeps
         flow.Controls.Add(_note);
         Body.Controls.Add(flow);
         foreach (var n in new[] { _mb, _win }) n.ValueChanged += (_, _) => { UpdateRate(); if (!_quiet) Changed?.Invoke(); };

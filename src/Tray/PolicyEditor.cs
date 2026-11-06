@@ -137,9 +137,9 @@ sealed class PolicyEditor : UserControl
         _own.Margin = new Padding(0, 7, 10, 0); _own.AccessibleName = "Own trigger";
         ownRow.Controls.AddRange(new Control[] { _own, ownLbl, ownNote });
         Ui.Tip.SetToolTip(_own, "On = this rule gets its own MB and seconds.\nOff = it uses the global trigger above.");
-        var ownFields = new FlowLayoutPanel { WrapContents = false, BackColor = Ui.CardBg, Height = 58 };
-        ownFields.Controls.Add(new Field("More Than", _mb, "MB") { Width = 160, Margin = new Padding(0, 0, 14, 0) });
-        ownFields.Controls.Add(new Field("Within", _win, "seconds") { Width = 190, Margin = new Padding(0, 0, 14, 0) });
+        var ownFields = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Ui.CardBg, Height = 58 + 8 + 58 };      // one under the other: side by side they do not fit the card at this size
+        ownFields.Controls.Add(new Field("More Than", _mb, "MB") { Width = 230, Margin = new Padding(0, 0, 0, 8) });
+        ownFields.Controls.Add(new Field("Within", _win, "seconds") { Width = 230, Margin = new Padding(0) });
         Ui.Tip.SetToolTip(_rate, ""); _rate.Visible = false;   // the rate fits no room beside the wider fields: it is shown in their tooltips (UpdateRate)
         ownFields.Controls.Add(_rate);
         _ownFields = ownFields;

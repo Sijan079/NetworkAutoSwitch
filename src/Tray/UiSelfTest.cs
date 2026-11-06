@@ -98,6 +98,11 @@ static class UiSelfTest
                 using var bmp = new System.Drawing.Bitmap(shot.Width, shot.Height);
                 shot.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
                 bmp.Save(Path.ChangeExtension(outFile, ".rules.png"));
+                // the same with "Own Trigger" switched on, so its two number fields show
+                ((CheckBox)typeof(PolicyEditor).GetField("_own", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(ed2)!).Checked = true; Application.DoEvents();
+                using var bmp2 = new System.Drawing.Bitmap(shot.Width, shot.Height);
+                shot.DrawToBitmap(bmp2, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
+                bmp2.Save(Path.ChangeExtension(outFile, ".rules-own.png"));
                 Say("rules editor rendered");
             }
             // 3) the Networks page: choose adapters yourself, Save, and check what reached the settings file and the engine
