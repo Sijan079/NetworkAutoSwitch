@@ -217,11 +217,11 @@ sealed partial class MainForm
             string path = it.SubItems[0].Text, name = Path.GetFileName(path), status = it.SubItems.Count > 2 ? it.SubItems[2].Text : "";
             listed.Add(name);
             if (it.Name == "blocked")
-                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Blocked", Ui.Red), new DashCell("—") }, "Allow", (string)it.Tag!, $"{path}\n{status}. Allow lets it through for {AllowMinutes} minutes.", ActionTip: $"Allow For {AllowMinutes} Minutes"));
+                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Blocked", Ui.Red), new DashCell("—") }, "Allow", (string)it.Tag!, $"{path}\n{status}. Allow lets it through for {AllowMinutes} minutes.", Danger: true, ActionTip: $"Allow For {AllowMinutes} Minutes"));      // red: it is blocked (the colour follows the state, like the red chip)
             else
             {
                 int at = status.LastIndexOf(" in ", StringComparison.Ordinal);
-                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Allowed", Ui.Blue), new DashCell(at >= 0 ? status[(at + 4)..] : "") }, "Block Now", (string)it.Tag!, $"{path}\nWatched again when the countdown ends. Block Now blocks it again at once.", Danger: true, ActionTip: "Block Now"));
+                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Allowed", Ui.Blue), new DashCell(at >= 0 ? status[(at + 4)..] : "") }, "Block Now", (string)it.Tag!, $"{path}\nWatched again when the countdown ends. Block Now blocks it again at once.", ActionTip: "Block Now"));
             }
         }
         foreach (var r in usage)
