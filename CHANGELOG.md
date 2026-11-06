@@ -21,6 +21,10 @@ Every release must have its own `## [x.y.z]` section: the release workflow copie
 
 ### Fixed
 - A white strip in the Network Activity header when a column was dragged narrower. The Watch List column now always takes what is left.
+- **Settings can no longer be lost or reset by two saves at once** (#1). Saves are locked and written to a temp file first, and a damaged settings file is recovered from a `.bak` copy instead of being replaced by the defaults.
+- **An adapter without IPv4 no longer stops the engine** (#9); it is shown as unhealthy ("no IPv4").
+- **A stuck PowerShell command no longer freezes the app** (#8). Each command has a 30 s limit, both outputs are read, and only the exit code decides failure (other error text is logged as a warning).
+- **Rule names are quoted safely in firewall commands** (#6), including curly quotes, and names with characters outside letters, digits, spaces and `- _ . ( ) + &` are cleaned on load (a log line says so).
 
 ## [0.3.1] - 2026-11-05
 

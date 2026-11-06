@@ -12,3 +12,5 @@ dist/
 
 # local helper scripts (not part of the repository: releases ship as an installer bundle)
 scripts/
+
+.claude/worktrees/
