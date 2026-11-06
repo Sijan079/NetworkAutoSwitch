@@ -157,7 +157,6 @@ sealed partial class MainForm
         // the mockup's page: 28 px sides, the header (title, subtitle, actions) on top, the cards below it with 16 px between them
         var page = new Panel { BackColor = Ui.Bg, Padding = new Padding(28, 0, 28, 24) };
         var header = new PageHeader("Programs");
-        header.AddAction(Ui.Btn(Ui.Shield, "Backup Rules", "Open the rules that decide which programs are watched or blocked on the backup.", () => ShowWindow("policy")));
 
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, 6, 0, 0) };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
