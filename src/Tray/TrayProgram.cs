@@ -137,7 +137,8 @@ sealed class TrayContext : ApplicationContext
             ? $"Daily data limit reached: {used / 1e6:0} MB of {cap / 1e6:0} MB used on {_backup} today." : $"{used / 1e6:0} MB of your {cap / 1e6:0} MB daily limit used on {_backup} today.", level == BudgetLevel.Reached ? ToolTipIcon.Warning : ToolTipIcon.Info)); };
         _icon.BalloonTipClicked += (_, _) => Open(_balloonPage);
         TrayProgram.OnCrash = msg => { if (!_stopping) _ui.BeginInvoke(() => Notify(msg, ToolTipIcon.Error)); };
-        if (showWindow) Open("Dashboard");
+        // --page <key> (dashboard, activity, networks, log, policy, settings): open the window on that page (for development and screenshots)
+        if (showWindow) Open(Environment.GetCommandLineArgs().SkipWhile(a => a != "--page").Skip(1).FirstOrDefault() ?? "Dashboard");
         if (!dryRun && AppSettings.Load().Welcomed == false) ShowWelcomeSoon();
 
         // --snapshot <folder>: dry-run helper. After 20 s save PNGs of each tab, then quit (no screen capture involved).

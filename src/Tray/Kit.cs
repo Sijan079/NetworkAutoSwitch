@@ -346,7 +346,16 @@ sealed class Field : Panel
                 return;
             }
             int h = _input.PreferredSize.Height, inset = _input is ComboBox ? 2 : 12;
-            if (_num is not null) _input.SetBounds(StepSide, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - StepSide * 2 - SuffixW), h);      // between the two buttons, left of the unit
+            if (_num is not null)
+            {
+                // Between the two buttons, left of the unit. A NumericUpDown keeps a slot for its up/down spinner at its right end, and on screen
+                // that slot is drawn even when the spinner is "hidden" (a dark box beside the unit). So the number is made that much wider and a clip
+                // region cuts the slot off: it is neither painted nor clicked, and the digits get the whole visible width.
+                int visible = Math.Max(10, Width - StepSide * 2 - SuffixW);
+                int slot = Math.Max(_num.Controls.Count > 0 ? _num.Controls[0].Width : 0, SystemInformation.VerticalScrollBarWidth + 8);      // too big is safe, too small would shorten the digits
+                _input.SetBounds(StepSide, Math.Max(1, (Height - h) / 2), visible + slot, h);
+                var old = _num.Region; _num.Region = new Region(new Rectangle(0, 0, visible, _num.Height)); old?.Dispose();
+            }
             else _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW), h);
         }
         protected override void OnPaint(PaintEventArgs e)
