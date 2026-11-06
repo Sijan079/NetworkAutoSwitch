@@ -102,7 +102,18 @@ public static class BackupPolicy
         return result;
     }
 
-    internal static string Q(string s) => "'" + s.Replace("'", "''") + "'";
+    // PowerShell also ends a single-quoted string on the curly quotes U+2018..U+201B, so a path
+    // containing one could break out; doubling any of them escapes it the same way as '.
+    internal static string Q(string s)
+    {
+        var sb = new System.Text.StringBuilder(s.Length + 2).Append('\'');
+        foreach (var c in s)
+        {
+            if (c == '\'' || (c >= '‘' && c <= '‛')) sb.Append(c);
+            sb.Append(c);
+        }
+        return sb.Append('\'').ToString();
+    }
 
     public static List<string> ApplyCommands(PolicyFile p, string backupAdapter)
     {

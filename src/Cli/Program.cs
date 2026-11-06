@@ -395,6 +395,9 @@ static class SelfTest
         Check("quoting: a rule name with '; Remove-Item ... cannot break out of its quotes",
             eb.Contains("x''; Remove-Item C:\\Windows -Recurse; ''") && OneLiteral(eb, "-DisplayName") && OneLiteral(eu, "-DisplayName")
             && OneLiteral(eb, "-Program") && OneLiteral(eb, "-InterfaceAlias") && eb.Contains("-Program 'C:\\G\\it''s.exe'"));
+        Check("quoting: curly single quotes are doubled too, so they cannot end the string",
+            DownloadGuard.BlockCommand(new GuardAction(GuardKind.Block, "Game", "C:\\G\\a\u2019; calc; \u2018b.exe", DownloadGuard.DisplayNameFor("Game", @"C:\G\x.exe")), "Ethernet 2")
+                .Contains("-Program 'C:\\G\\a\u2019\u2019; calc; \u2018\u2018b.exe'"));
         Check("names: plain names (also ones PolicyBuilder makes) are valid", BackupPolicy.IsValidName("Steam") && BackupPolicy.IsValidName("HoYoPlay 2") && BackupPolicy.IsValidName("Game (x86) v1.2_beta-3 & co+"));
         Check("names: quotes, $, ;, backticks, empty and over-long names are invalid",
             !BackupPolicy.IsValidName("Bob's Game") && !BackupPolicy.IsValidName("a;b") && !BackupPolicy.IsValidName("$x") && !BackupPolicy.IsValidName("a`b")
