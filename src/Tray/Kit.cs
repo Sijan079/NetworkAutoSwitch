@@ -88,7 +88,13 @@ sealed class KitButton : Button
             if (!Enabled) return (parent, Ui.Mix(a, parent, 0.45f), Ui.Mix(a, parent, 0.5f));
             return (_busy ? parent : _down ? Ui.Mix(a, parent, 0.30f) : _hover ? Ui.Mix(a, parent, 0.16f) : parent, a, a);
         }
-        if (!Enabled) return (bg, Ui.Mix(fg, bg, 0.45f), Ui.Mix(edge, bg, 0.5f));
+        if (!Enabled)
+        {
+            // inactive: the fill is pulled toward the surface behind as well (a bright filled button turns into a dull, quiet one), then the text and edge follow
+            var quiet = Kind == BtnKind.Secondary ? Ui.Mix(bg, parent, 0.55f) : Kind == BtnKind.Danger ? bg : Ui.Mix(bg, parent, 0.22f);
+            bool filled = Kind is BtnKind.Primary or BtnKind.Success;
+            return (quiet, Ui.Mix(filled ? Ui.Muted : fg, quiet, filled ? 0.6f : 0.45f), filled ? quiet : Ui.Mix(edge, quiet, 0.5f));
+        }
         if (_busy) return (bg, fg, edge);       // no hover or press effect while it works
         if (_down) bg = Kind == BtnKind.Danger ? Ui.Tint(Ui.Red, 0.26f) : Ui.Mix(Ui.Text, bg, Kind == BtnKind.Secondary ? 0.14f : 0.22f);
         else if (_hover) bg = Kind == BtnKind.Danger ? Ui.Tint(Ui.Red, 0.14f) : Ui.Mix(Ui.Text, bg, Kind == BtnKind.Secondary ? 0.07f : 0.12f);

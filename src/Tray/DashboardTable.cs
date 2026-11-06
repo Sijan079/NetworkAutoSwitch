@@ -6,12 +6,12 @@ namespace NetworkAutoSwitch.Tray;
 /// <summary>One cell: text, or a chip when <see cref="Chip"/> is set (the text is drawn inside it in that colour).</summary>
 readonly record struct DashCell(string Text, Color? Chip = null);
 
-/// <summary>One row. <see cref="Action"/> = the text of a small button at the end of the row (null = none); <see cref="Key"/> is handed back on a click.</summary>
-sealed record DashRow(DashCell[] Cells, string? Action, string Key, string Tip, bool Danger = false)
+/// <summary>One row. <see cref="Action"/> = what a small icon button at the end of the row does ("Allow" shows an open lock, "Block Now" a closed one; null = no button), named in <see cref="ActionTip"/>; <see cref="Key"/> is handed back on a click.</summary>
+sealed record DashRow(DashCell[] Cells, string? Action, string Key, string Tip, bool Danger = false, string? ActionTip = null)
 {
     public bool Same(DashRow o)
     {
-        if (Action != o.Action || Key != o.Key || Tip != o.Tip || Danger != o.Danger || Cells.Length != o.Cells.Length) return false;
+        if (Action != o.Action || Key != o.Key || Tip != o.Tip || Danger != o.Danger || ActionTip != o.ActionTip || Cells.Length != o.Cells.Length) return false;
         for (int i = 0; i < Cells.Length; i++) if (Cells[i] != o.Cells[i]) return false;
         return true;
     }
@@ -111,7 +111,8 @@ sealed class DashTable : Control
                 Color edge = row.Danger ? Ui.Red : Ui.Border, ink = row.Danger ? Ui.Red : Ui.Text;
                 Color bg = row.Danger ? (hot ? Ui.Tint(Ui.Red, 0.14f) : BackColor) : hot ? Ui.Mix(Ui.Text, Ui.Raised, 0.07f) : Ui.Raised;
                 DashPaint.Fill(g, b.X, b.Y, b.Width, b.Height, 7, bg); DashPaint.Outline(g, b.X, b.Y, b.Width, b.Height, 7, edge);
-                TextRenderer.DrawText(g, a, Ui.UiFont(8.6f, Weight.SemiBold), b, ink, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                // an icon, not a word: an open lock lets it through (Allow), a closed one blocks it again (Block Now); the tooltip names it
+                g.DrawImage(Ui.GlyphCached(a.StartsWith("Allow", StringComparison.Ordinal) ? Ui.Unlock : Ui.Lock, 18, ink), b.X + (b.Width - 18) / 2, b.Y + (b.Height - 18) / 2);
             }
             g.DrawLine(Ui.Pen(Ui.Border), 0, y + RowH - 1, Width, y + RowH - 1);
         }
@@ -130,8 +131,8 @@ sealed class DashTable : Control
     {
         int r = RowAt(e.Location);
         bool btn = r >= 0 && _rows[r].Action is not null && BtnRect(r).Contains(e.Location);
-        if (r != _hoverRow)
-            Ui.Tip.SetToolTip(this, r >= 0 ? _rows[r].Tip : "");        // the full path / details of the row under the mouse
+        if (r != _hoverRow || btn != _hoverBtn)
+            Ui.Tip.SetToolTip(this, r < 0 ? "" : btn ? (_rows[r].ActionTip ?? _rows[r].Action ?? "") : _rows[r].Tip);        // over the button: what it does; elsewhere: the full path / details of the row
         if (r != _hoverRow || btn != _hoverBtn) { _hoverRow = r; _hoverBtn = btn; Cursor = btn ? Cursors.Hand : Cursors.Default; Invalidate(); }
         base.OnMouseMove(e);
     }

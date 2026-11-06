@@ -58,6 +58,7 @@ sealed class ConnectionsPanel : Panel
         _save = Ui.Btn(Ui.Save, "Save", "Save your networks and adapters and apply them now.", Save, BtnKind.Primary);
         var revert = _revert = Ui.Btn(Ui.Undo, "Revert", "Discard unsaved changes.", Reload);
         _header.AddAction(_status); _header.AddAction(revert); _header.AddAction(_save);
+        _header.Padding = new Padding(0, 0, Ui.Gap, 0);      // the cards below carry a Gap on their right; the buttons end on the same line as they do
 
         // mode: only HOW the choices are stored. The groups below mean the same in both modes, so this sits quietly under the header.
         Ui.Tip.SetToolTip(_mode, "How your choices are saved. Main Networks, Backup Networks and Unlabelled mean the same in both modes.\n"

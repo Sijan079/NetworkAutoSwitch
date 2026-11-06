@@ -107,7 +107,7 @@ sealed partial class MainForm
         actCard.Body.Padding = new Padding(14, 0, 14, 8); actCard.Body.Controls.Add(_actTable);
 
         _dogTable = new DashTable(new[] { new DashColumn("PROGRAM", 0), new DashColumn("STATE", 80), new DashColumn("TIME LEFT", 70, Right: true, Optional: true) },
-            "Nothing is blocked or watched.", actionWidth: 84) { Dock = DockStyle.Fill };
+            "Nothing is blocked or watched.", actionWidth: 28) { Dock = DockStyle.Fill };
         _dogTable.ActionClicked += WatchdogAction;
         var dogCard = new Card("", "Watchdog") { Margin = Gutter };
         dogCard.SetHint("Blocked = the watchdog stopped it for downloading too fast on a protected connection. Allowed = you let it through for a while (the countdown). Watching = on your watch list.\nBlocks never expire on their own: you decide. More actions are on the Programs page.");
@@ -217,11 +217,11 @@ sealed partial class MainForm
             string path = it.SubItems[0].Text, name = Path.GetFileName(path), status = it.SubItems.Count > 2 ? it.SubItems[2].Text : "";
             listed.Add(name);
             if (it.Name == "blocked")
-                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Blocked", Ui.Red), new DashCell("—") }, "Allow", (string)it.Tag!, $"{path}\n{status}. Allow lets it through for {AllowMinutes} minutes."));
+                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Blocked", Ui.Red), new DashCell("—") }, "Allow", (string)it.Tag!, $"{path}\n{status}. Allow lets it through for {AllowMinutes} minutes.", ActionTip: $"Allow For {AllowMinutes} Minutes"));
             else
             {
                 int at = status.LastIndexOf(" in ", StringComparison.Ordinal);
-                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Allowed", Ui.Blue), new DashCell(at >= 0 ? status[(at + 4)..] : "") }, "Block Now", (string)it.Tag!, $"{path}\nWatched again when the countdown ends. Block Now blocks it again at once.", Danger: true));
+                dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Allowed", Ui.Blue), new DashCell(at >= 0 ? status[(at + 4)..] : "") }, "Block Now", (string)it.Tag!, $"{path}\nWatched again when the countdown ends. Block Now blocks it again at once.", Danger: true, ActionTip: "Block Now"));
             }
         }
         foreach (var r in usage)
