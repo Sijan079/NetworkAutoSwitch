@@ -215,6 +215,10 @@ static class SelfTest
         Check("2 good probes: stay on backup", m.Active == Active.Backup);
         d = m.Observe(true, true);
         Check("3rd good probe switches back", d.Changed && m.Active == Active.Primary);
+        // Issue #9: an adapter with no IPv4 binding made Probe throw and end the engine loop.
+        Check("no IPv4: a throwing index lookup gives null instead of an exception", AdapterProber.IPv4Index(() => throw new System.Net.NetworkInformation.NetworkInformationException()) is null);
+        Check("no IPv4: a null IPv4 properties object gives null too", AdapterProber.IPv4Index(() => ((System.Net.NetworkInformation.IPv4InterfaceProperties?)null)!.Index) is null);
+        Check("no IPv4: a normal lookup returns the index", AdapterProber.IPv4Index(() => 7) == 7);
         var n = new FailoverMonitor(3, 3);
         for (int i = 0; i < 5; i++) n.Observe(false, false);
         Check("both down: never switches", n.Active == Active.Primary);

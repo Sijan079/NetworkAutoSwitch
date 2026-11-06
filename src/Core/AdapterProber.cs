@@ -34,12 +34,31 @@ public static class AdapterProber
     /// <summary>The adapter is gone or its link is down: certain, so the engine does not wait for several failed checks.</summary>
     public static bool IsLinkDown(string detail) => detail == AdapterDown || detail == NotFound;
 
+    public const string NoIPv4 = "no IPv4";
+
+    /// <summary>Reads the IPv4 interface index, or null when the adapter has none.
+    /// Windows throws (NetworkInformationException) or returns null for an adapter with no IPv4 binding;
+    /// this must not escape, because Probe runs inside the engine loop and an exception there stops it.</summary>
+    public static int? IPv4Index(Func<int> lookup)
+    {
+        try { return lookup(); }
+        catch (Exception) { return null; }
+    }
+
     public static ProbeResult Probe(string adapterName, int timeoutMs = 1200)
     {
-        var nic = Find(adapterName);
+        NetworkInterface? nic;
+        // Enumerating adapters and reading their status can also throw while Windows is reconfiguring them; treat that as "not found" rather than crash the loop.
+        try { nic = Find(adapterName); }
+        catch (Exception) { nic = null; }
         if (nic is null) return new(adapterName, 0, false, 0, string.IsNullOrWhiteSpace(adapterName) ? NoBackup : NotFound);
-        if (nic.OperationalStatus != OperationalStatus.Up) return new(nic.Name, 0, false, 0, AdapterDown);
-        int idx = nic.GetIPProperties().GetIPv4Properties().Index;
+        bool up;
+        try { up = nic.OperationalStatus == OperationalStatus.Up; }
+        catch (Exception) { return new(adapterName, 0, false, 0, NotFound); }
+        if (!up) return new(nic.Name, 0, false, 0, AdapterDown);
+        // GetIPv4Properties() may return null instead of throwing, so the null-forgiving "!" deliberately lands in the catch.
+        int? index = IPv4Index(() => nic.GetIPProperties().GetIPv4Properties()!.Index);
+        if (index is not int idx) return new(nic.Name, 0, false, 0, NoIPv4);
 
         using var cts = new CancellationTokenSource(timeoutMs);
         var pending = Targets.Select(t => ConnectAsync(idx, t, cts.Token)).ToList();
