@@ -70,6 +70,10 @@ sealed class KitButton : Button
 
     protected override void OnClick(EventArgs e) { if (!_busy) base.OnClick(e); }
 
+    /// <summary>When set, the button wears this colour: an outline and text in it on the surface behind (a button on a tinted banner).</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color? Accent { get; set; }
+
     (Color Bg, Color Fg, Color Edge) Colors()
     {
         var parent = Parent?.BackColor ?? Ui.CardBg;
@@ -79,6 +83,11 @@ sealed class KitButton : Button
             BtnKind.Danger => (parent, Ui.Red, Ui.Red),
             _ => (Ui.Raised, Ui.Text, Ui.Border),
         };
+        if (Accent is Color a)
+        {
+            if (!Enabled) return (parent, Ui.Mix(a, parent, 0.45f), Ui.Mix(a, parent, 0.5f));
+            return (_busy ? parent : _down ? Ui.Mix(a, parent, 0.30f) : _hover ? Ui.Mix(a, parent, 0.16f) : parent, a, a);
+        }
         if (!Enabled) return (bg, Ui.Mix(fg, bg, 0.45f), Ui.Mix(edge, bg, 0.5f));
         if (_busy) return (bg, fg, edge);       // no hover or press effect while it works
         if (_down) bg = Kind == BtnKind.Danger ? Ui.Tint(Ui.Red, 0.26f) : Ui.Mix(Ui.Text, bg, Kind == BtnKind.Secondary ? 0.14f : 0.22f);
@@ -200,6 +209,9 @@ sealed class Segmented : KitControl
     readonly List<Rectangle> _cells = new();
     int _selected, _hover = -1;
     public event Action<int>? SelectedChanged;
+    /// <summary>Optional: the colour the SELECTED segment is filled with (text on it uses OnAccent). Null = the quiet raised look.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Func<int, Color?>? SelectedFill { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int SelectedIndex { get => _selected; set { if (value == _selected || value < 0 || value >= _items.Count) return; _selected = value; Invalidate(); SelectedChanged?.Invoke(value); } }
     public string SelectedText => _selected < _items.Count ? _items[_selected] : "";
@@ -232,14 +244,14 @@ sealed class Segmented : KitControl
         g.FillPath(Ui.Brush(Ui.InputBg), outline); g.DrawPath(Ui.Pen(Ui.Border), outline);
         for (int i = 0; i < _cells.Count; i++)
         {
-            var c = _cells[i]; bool on = i == _selected;
+            var c = _cells[i]; bool on = i == _selected; Color? accent = on ? SelectedFill?.Invoke(i) : null;
             if (on || i == _hover)
                 using (var p = Ui.RoundRect(new RectangleF(c.X + 0.5f, c.Y + 0.5f, c.Width - 1, c.Height - 1), 7))
                 {
-                    g.FillPath(Ui.Brush(on ? Ui.Raised : Ui.Mix(Ui.Raised, Ui.InputBg, 0.5f)), p);
-                    if (on) g.DrawPath(Ui.Pen(Ui.Border), p);
+                    g.FillPath(Ui.Brush(accent ?? (on ? Ui.Raised : Ui.Mix(Ui.Raised, Ui.InputBg, 0.5f))), p);
+                    if (on && accent is null) g.DrawPath(Ui.Pen(Ui.Border), p);
                 }
-            TextRenderer.DrawText(g, _items[i], Font, c, on ? Ui.Text : Ui.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, _items[i], Font, c, on ? (accent is null ? Ui.Text : Ui.OnAccent) : Ui.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             if (on && Focused && ShowFocusCues) using (var p = Ui.RoundRect(new RectangleF(c.X + 1.5f, c.Y + 1.5f, c.Width - 3, c.Height - 3), 6)) g.DrawPath(Ui.Pen(Ui.Blue, 1.5f), p);
         }
     }
@@ -481,15 +493,40 @@ sealed class Banner : KitControl
 {
     string _title = "", _detail = "";
     bool _severe = true;
-    readonly FlowLayoutPanel _right = new() { Dock = DockStyle.Right, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Padding = new Padding(0, 14, 14, 0) };
+    readonly List<Control> _actions = new();
+    int _actionsLeft;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Severe { get => _severe; set { _severe = value; Recolor(); Invalidate(); } }
     Color Role => _severe ? Ui.Red : Ui.Amber;
 
-    public Banner() { Height = 68; Dock = DockStyle.Top; Controls.Add(_right); Recolor(); }
-    void Recolor() { BackColor = Ui.Tint(Role, 0.16f); _right.BackColor = BackColor; foreach (Control c in _right.Controls) c.Invalidate(); }
+    public Banner() { Height = 68; Dock = DockStyle.Top; Recolor(); }
+    void Recolor()
+    {
+        BackColor = Ui.Tint(Role, 0.16f);
+        foreach (var c in _actions) { if (c is KitButton b) b.Accent = Role; c.Invalidate(); }     // the buttons wear the banner's colour, not the dark "secondary" look
+    }
     public void Set(string title, string detail) { _title = title; _detail = detail; Invalidate(); }
-    public T AddAction<T>(T c) where T : Control { c.Margin = new Padding(8, 0, 0, 0); _right.Controls.Add(c); return c; }
+
+    /// <summary>Adds a button on the right. The buttons are placed by hand (not in a docked panel), so nothing sits on top of the border or the rounded corners.</summary>
+    public T AddAction<T>(T c) where T : Control
+    {
+        if (c is KitButton b) b.Accent = Role;
+        _actions.Add(c); Controls.Add(c); PlaceActions();
+        return c;
+    }
+
+    void PlaceActions()
+    {
+        int x = Width - 16;
+        for (int i = _actions.Count - 1; i >= 0; i--)
+        {
+            var c = _actions[i]; int w = c.PreferredSize.Width;
+            c.SetBounds(x - w, (Height - c.PreferredSize.Height) / 2, w, c.PreferredSize.Height);
+            x -= w + 8;
+        }
+        _actionsLeft = _actions.Count == 0 ? Width - 16 : x + 8;
+    }
+    protected override void OnLayout(LayoutEventArgs e) { base.OnLayout(e); PlaceActions(); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -497,7 +534,7 @@ sealed class Banner : KitControl
         var path = Outline(12);
         g.FillPath(Ui.Brush(BackColor), path); g.DrawPath(Ui.Pen(Role), path);
         g.DrawImage(Ui.GlyphCached(Ui.Warning, 22, Role), 18, (Height - 22) / 2);
-        int textW = Math.Max(10, _right.Left - 60);
+        int textW = Math.Max(10, _actionsLeft - 60 - 12);
         TextRenderer.DrawText(g, _title, Ui.UiFont(10.5f, Weight.Bold), new Rectangle(52, 14, textW, 22), Ui.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         TextRenderer.DrawText(g, _detail, Ui.UiFont(9.4f), new Rectangle(52, 36, textW, 20), Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }

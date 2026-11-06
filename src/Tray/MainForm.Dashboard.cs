@@ -20,7 +20,7 @@ sealed partial class MainForm
     EngineStatus? _dashStatus;          // the latest status, shown when the page comes into view
     string? _warnShown; bool _warnRed = true;
     string _capTip = "";
-    const int AlarmRowH = 84, HeaderH = 82;
+    const int AlarmRowH = 84, HeaderH = 76;      // the same header height as every other page
     static readonly ConnectionMode[] Modes = { ConnectionMode.Auto, ConnectionMode.StayPrimary, ConnectionMode.StayBackup };
 
     /// <summary>True only while the dashboard is really on screen (the window is shown and this page is the one in view).</summary>
@@ -33,22 +33,8 @@ sealed partial class MainForm
         _dashPage = page; _dashRoot = page;
         page.Content.Padding = new Padding(28, 0, 12, 8);                  // 28 px each side, as in the mockup (the cards carry 16 px of it on their right)
 
-        // ---- header: title, the state line under it, actions on the right ----
+        // ---- header: the title and the actions on the right (no line under the title: the filled card says which connection is in use) ----
         var header = _dashHeader = new PageHeader("Dashboard") { Height = HeaderH, Padding = new Padding(0, 0, 16, 0) };
-        // the state line is the _banner label (and _bannerSkeleton while loading), so the loading logic in MainForm keeps working as it is
-        _banner.Dock = DockStyle.None; _banner.AutoSize = false; _banner.AutoEllipsis = true; _banner.UseMnemonic = false;
-        _banner.Font = Ui.UiFont(9.75f); _banner.ForeColor = Ui.Muted; _banner.BackColor = Ui.Bg; _banner.TextAlign = ContentAlignment.MiddleLeft;
-        _bannerSkeleton.Dock = DockStyle.None;
-        header.Controls.Add(_banner); header.Controls.Add(_bannerSkeleton);
-        var title = header.Controls.OfType<Label>().First(l => l.Text == "Dashboard");
-        var actions = header.Controls.OfType<FlowLayoutPanel>().First();
-        void PlaceState()
-        {
-            int w = Math.Max(80, actions.Left - 12);
-            _banner.SetBounds(1, title.Bottom + 1, w, 22);
-            _bannerSkeleton.SetBounds(0, title.Bottom - 8, Math.Min(w, 380), HeaderH - title.Bottom + 8);      // its bar starts 12 px down: just under the title
-        }
-        header.Resize += (_, _) => PlaceState(); actions.SizeChanged += (_, _) => PlaceState(); title.SizeChanged += (_, _) => PlaceState();
 
         _updateBtn = Ui.Btn(Ui.Download, "Update", "A newer version is available. Click to download, check and install it.", () => InstallUpdate?.Invoke(), BtnKind.Primary);
         _updateBtn.Visible = false;
@@ -82,8 +68,9 @@ sealed partial class MainForm
         // ---- mode ----
         _modeSeg = new Segmented("Automatic", "Stay On Main", "Stay On Backup");
         _modeSeg.Show(Array.IndexOf(Modes, _engine.ConnMode));
+        _modeSeg.SelectedFill = i => i == 0 ? Ui.Blue : i == 1 ? Ui.Green : Ui.Amber;      // the choice in force is filled with its colour, so it is seen at a glance
         _modeSeg.SelectedChanged += i => { var m = Modes[i]; if (m != _engine.ConnMode) _engine.SetConnectionMode(m); RenderModeHint(m); };
-        var modeLabel = new Label { Text = "MODE", AutoSize = true, Font = Ui.UiFont(9f, Weight.Bold), ForeColor = Ui.Muted, BackColor = Ui.Bg, UseMnemonic = false };
+        var modeLabel = new Label { Text = "MODE", AutoSize = true, Font = Ui.UiFont(9.4f, Weight.Bold), ForeColor = Ui.Text, BackColor = Ui.Bg, UseMnemonic = false };
         var modeRow = new Panel { Dock = DockStyle.Fill, BackColor = Ui.Bg, Margin = Gutter };
         modeRow.Controls.Add(modeLabel); modeRow.Controls.Add(_modeSeg); modeRow.Controls.Add(_modeHint);
         modeRow.Layout += (_, _) =>

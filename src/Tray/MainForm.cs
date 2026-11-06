@@ -77,7 +77,6 @@ sealed partial class MainForm : Form
     // loading placeholders (shown while the engine changes the network, so old values never show under new names)
     readonly Action<bool> _busyHandler;
     readonly System.Windows.Forms.Timer _loadingTimeout = new() { Interval = 12000 };
-    readonly Skeleton _bannerSkeleton = new(new[] { (0.5f, 22) }, 0, 8) { Dock = DockStyle.Fill, Visible = false, Surface = Ui.Bg };
     Card _chartCard = null!;
     bool _loading, _awaitStatus;
     NavShell _tabs = new();
@@ -137,7 +136,7 @@ sealed partial class MainForm : Form
     {
         _loading = on; _loadingTimeout.Stop();
         _cardP.SetLoading(on, AdapterCard.Bars); _cardB.SetLoading(on, AdapterCard.Bars); _chartCard.SetLoading(on, ChartBars);
-        _ = _bannerSkeleton.Handle; _banner.Visible = !on; _bannerSkeleton.Visible = on; if (on) _loadingTimeout.Start(); else _awaitStatus = false;
+        if (on) _loadingTimeout.Start(); else _awaitStatus = false;      // (the line under the title is gone, so no placeholder for it)
     }
 
     /// <summary>The engine started (true) or finished (false) changing the network. When it finishes, the placeholders stay until the next

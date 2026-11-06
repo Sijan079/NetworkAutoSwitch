@@ -87,10 +87,12 @@ sealed class AdapterCard : Card
         {
             var g = e.Graphics; g.Clear(BackColor);
             bool filled = _o.Fill is not null;
-            Color text = filled ? Ui.OnAccent : Ui.Text;
-            Color muted = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.72f) : Ui.Muted;
-            Color role = filled ? Ui.OnAccent : _o._inUse ? _o._role : Ui.Muted;      // a connection that is not in use is muted: no teal or amber, whatever its status
-            Color line = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.25f) : Ui.Border;
+            bool standby = !_o._inUse;      // not the connection in use: the whole card is toned down, so it reads as "not selected" at a glance
+            Color quiet = Ui.Mix(Ui.Muted, BackColor, 0.78f), faint = Ui.Mix(Ui.Muted, BackColor, 0.55f);
+            Color text = filled ? Ui.OnAccent : standby ? quiet : Ui.Text;
+            Color muted = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.72f) : standby ? faint : Ui.Muted;
+            Color role = filled ? Ui.OnAccent : standby ? faint : _o._role;      // no teal or amber on a card that is not in use, whatever its status
+            Color line = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.25f) : standby ? Ui.Mix(Ui.Border, BackColor, 0.5f) : Ui.Border;
             int w = Width;
 
             // icon box: 40 x 40, radius 10, role-coloured outline and glyph
@@ -99,7 +101,7 @@ sealed class AdapterCard : Card
 
             // chip on the right: the card in use gets an OnAccent outline on its fill; standby is a muted outline
             int chipW = DashPaint.ChipWidth(_o._chip);
-            DashPaint.Chip(g, _o._chip, filled ? Ui.OnAccent : Ui.Muted, w - chipW - 1, 12, false);
+            DashPaint.Chip(g, _o._chip, filled ? Ui.OnAccent : standby ? faint : Ui.Muted, w - chipW - 1, 12, false);
 
             int tx = 52, tw = Math.Max(10, w - tx - chipW - 10);
             TextRenderer.DrawText(g, _o._kind, Ui.UiFont(8.25f, Weight.Bold), new Rectangle(tx, -1, tw, 16), role, Line);
@@ -113,7 +115,7 @@ sealed class AdapterCard : Card
                 int x = i * (col + 12);
                 string label = i == 0 ? "Status" : i == 1 ? "Latency" : "Uptime";
                 string value = i == 0 ? _o._status : i == 1 ? _o._latency : _o._uptime;
-                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._inUse ? _o._statusInk : Ui.Muted) : (_o._inUse ? text : muted);      // a standby card: status, latency and uptime are all muted      // red on teal fails contrast: on a fill it is OnAccent; a standby card stays muted even when it is Down
+                Color ink = i == 0 ? (filled ? Ui.OnAccent : standby ? quiet : _o._statusInk) : text;      // a standby card: status, latency and uptime are all toned down; red on teal fails contrast, so on a fill it is OnAccent
                 TextRenderer.DrawText(g, label, Ui.UiFont(8.25f), new Rectangle(x, sy, col, 16), muted, Line);
                 TextRenderer.DrawText(g, value, Ui.UiFont(11.25f, Weight.Bold), new Rectangle(x, sy + 16, col, 24), ink, Line);
             }

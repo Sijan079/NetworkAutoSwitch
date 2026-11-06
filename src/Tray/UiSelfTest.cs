@@ -138,6 +138,18 @@ static class UiSelfTest
                 }
                 File.Delete(tmp);
             }
+            // 4) the alarm banner, red and amber, drawn on its own (it only shows on the dashboard in a bad state): pictures next to the result file
+            foreach (bool severe in new[] { true, false })
+            {
+                using var bf = new Form { StartPosition = FormStartPosition.Manual, Location = new System.Drawing.Point(-32000, -32000), Opacity = 0, Width = 900, Height = 190, BackColor = Ui.Bg, Padding = new Padding(16) };
+                var bn = new Banner { Dock = DockStyle.Top, Severe = severe };
+                bn.Set("Main Looks Like Your Phone", "Main connection is on SNcial, a backup network. Mobile data may be in use.");
+                bn.AddAction(Ui.Btn(Ui.Wifi, "Fix In Networks", "", () => { }));
+                bf.Controls.Add(bn); bf.Show(); Application.DoEvents();
+                using var bmp = new System.Drawing.Bitmap(bf.Width, bf.Height);      // the whole window, title bar included
+                bf.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height));
+                bmp.Save(outFile + (severe ? ".banner-red.png" : ".banner-amber.png"));
+            }
             Say("RESULT: no exception");
         }
         catch (Exception e) { Say("RESULT: EXCEPTION\r\n" + e); }

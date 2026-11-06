@@ -242,7 +242,15 @@ sealed class ConnectionsPanel : Panel
         Refill();
     }
 
-    void MarkDirty() { _dirty = true; if (_status.ForeColor != Ui.Red) { _status.Text = "Not saved yet."; _status.ForeColor = Ui.Muted; } }
+    void MarkDirty() { _dirty = true; UpdateButtons(); }
+
+    bool _same, _saving;
+    /// <summary>Save and Revert are on only when there is something to save or to undo (no "Not saved yet" text); while a save runs Save stays as it is (spinner) and Revert is off.</summary>
+    void UpdateButtons()
+    {
+        _save.Enabled = _saving || (_dirty && !_same);
+        _revert.Enabled = !_saving && _dirty;
+    }
 
     // The card's row is worked out from its parts (not a fixed number), so a spacing change can never cut the card short again:
     // card inset 4 + header 48 + body padding 4 / 14 + inset 4, the content (one text line, or a field: label 22 + box 36), and the Gap under the card.
@@ -273,12 +281,12 @@ sealed class ConnectionsPanel : Panel
     {
         bool same = Picked(_main) is string m && Picked(_backup) is string b && m.Equals(b, StringComparison.OrdinalIgnoreCase);
         if (same) { _status.Text = "Pick two different adapters."; _status.ForeColor = Ui.Red; }
-        else if (_status.ForeColor == Ui.Red) { _status.Text = _dirty ? "Not saved yet." : ""; _status.ForeColor = Ui.Muted; }
-        _save.Enabled = !same;
+        else if (_status.ForeColor == Ui.Red) { _status.Text = ""; _status.ForeColor = Ui.Muted; }
+        _same = same; UpdateButtons();
     }
 
     /// <summary>A save is running: Save shows a spinner and ignores clicks, Revert is disabled (it would undo what is being saved).</summary>
-    void SetSaving(bool on) { _save.Busy = on; _revert.Enabled = !on; }
+    void SetSaving(bool on) { _saving = on; _save.Busy = on; UpdateButtons(); }
 
     void Save()
     {
