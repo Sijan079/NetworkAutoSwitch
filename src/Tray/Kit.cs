@@ -255,7 +255,12 @@ sealed class Field : Panel
     sealed class FieldBox : Panel
     {
         readonly Control _input; readonly string _suffix;
+        readonly NumericUpDown? _num;                                   // a number field gets our own − and + buttons (the native arrows are hidden)
         GraphicsPath? _path; Size _pathSize;
+        int _hoverBtn, _downBtn;                                        // 0 none, 1 minus, 2 plus
+        readonly System.Windows.Forms.Timer _repeat = new() { Interval = 420 };
+        const int StepBtn = 24, StepGap = 4, StepEdge = 6;
+
         public FieldBox(Control input, string suffix)
         {
             _input = input; _suffix = suffix;
@@ -263,14 +268,29 @@ sealed class Field : Panel
             switch (input)
             {
                 case TextBox t: t.BorderStyle = BorderStyle.None; break;
-                case NumericUpDown n: n.BorderStyle = BorderStyle.None; break;
+                case NumericUpDown n:
+                    n.BorderStyle = BorderStyle.None; _num = n;
+                    if (n.Controls.Count > 0) n.Controls[0].Visible = false;      // the native spin arrows: replaced by the buttons drawn here
+                    n.ValueChanged += (_, _) => Invalidate();
+                    break;
                 case ComboBox c: c.FlatStyle = FlatStyle.Flat; break;
             }
             input.BackColor = Ui.InputBg; input.ForeColor = Ui.Text; input.Font = Ui.UiFont(9.75f);
             Controls.Add(input);
             input.GotFocus += (_, _) => Invalidate(); input.LostFocus += (_, _) => Invalidate();
+            _repeat.Tick += (_, _) => { _repeat.Interval = 70; Step(_downBtn); };      // holding a button keeps stepping
         }
         int SuffixW => _suffix.Length == 0 ? 0 : TextRenderer.MeasureText(_suffix, Ui.UiFont(9f), Size.Empty, TextFormatFlags.NoPadding).Width + 12;
+        int StepperW => _num is null ? 0 : StepEdge + StepBtn * 2 + StepGap + 6;      // room the two buttons take at the right edge
+        Rectangle MinusRect => new(Width - StepEdge - StepBtn * 2 - StepGap, (Height - StepBtn) / 2, StepBtn, StepBtn);
+        Rectangle PlusRect => new(Width - StepEdge - StepBtn, (Height - StepBtn) / 2, StepBtn, StepBtn);
+        int HitBtn(Point p) => _num is null ? 0 : MinusRect.Contains(p) ? 1 : PlusRect.Contains(p) ? 2 : 0;
+        bool CanStep(int btn) => _num is not null && _num.Enabled && (btn == 1 ? _num.Value > _num.Minimum : _num.Value < _num.Maximum);
+        void Step(int btn)
+        {
+            if (_num is null || !CanStep(btn)) { _repeat.Stop(); return; }
+            if (btn == 1) _num.DownButton(); else _num.UpButton();     // these respect the minimum, the maximum and the step
+        }
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
@@ -281,7 +301,7 @@ sealed class Field : Panel
                 return;
             }
             int h = _input.PreferredSize.Height, inset = _input is ComboBox ? 2 : 12;
-            _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW + (_input is ComboBox ? 0 : 0)), h);
+            _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW - StepperW), h);
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -291,12 +311,111 @@ sealed class Field : Panel
             if (_path is null || _pathSize != Size) { _path?.Dispose(); _path = Ui.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 8); _pathSize = Size; }
             g.FillPath(Ui.Brush(Ui.InputBg), _path);
             g.DrawPath(Ui.Pen(_input.ContainsFocus ? Ui.Green : Ui.Border), _path);
-            if (_suffix.Length > 0) TextRenderer.DrawText(g, _suffix, Ui.UiFont(9f), new Rectangle(Width - SuffixW - 4, 0, SuffixW, Height), Ui.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
+            if (_suffix.Length > 0) TextRenderer.DrawText(g, _suffix, Ui.UiFont(9f), new Rectangle(Width - StepperW - SuffixW - 4, 0, SuffixW, Height), Ui.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
+            if (_num is not null) { PaintStep(g, MinusRect, 1); PaintStep(g, PlusRect, 2); }
         }
-        protected override void OnMouseDown(MouseEventArgs e) { _input.Focus(); base.OnMouseDown(e); }
-        protected override void Dispose(bool disposing) { if (disposing) _path?.Dispose(); base.Dispose(disposing); }
+
+        /// <summary>One of the two round-cornered buttons: raised colour, a "−" or "+" drawn as lines, dimmed at the limit.</summary>
+        void PaintStep(Graphics g, Rectangle r, int btn)
+        {
+            bool can = CanStep(btn), hot = can && (_hoverBtn == btn), down = can && _downBtn == btn;
+            var fill = down ? Ui.Mix(Ui.Text, Ui.Raised, 0.16f) : hot ? Ui.Mix(Ui.Text, Ui.Raised, 0.08f) : Ui.Raised;
+            using (var p = Ui.RoundRect(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), 6)) { g.FillPath(Ui.Brush(fill), p); g.DrawPath(Ui.Pen(Ui.Border), p); }
+            var ink = can ? (hot || down ? Ui.Text : Ui.Muted) : Ui.Mix(Ui.Muted, Ui.Raised, 0.4f);
+            float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f;
+            var pen = Ui.Pen(ink, 1.8f);
+            g.DrawLine(pen, cx - 5, cy, cx + 5, cy);
+            if (btn == 2) g.DrawLine(pen, cx, cy - 5, cx, cy + 5);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            int h = HitBtn(e.Location); if (h != _hoverBtn) { _hoverBtn = h; Cursor = h != 0 && CanStep(h) ? Cursors.Hand : Cursors.Default; Invalidate(); }
+            base.OnMouseMove(e);
+        }
+        protected override void OnMouseLeave(EventArgs e) { _hoverBtn = 0; _downBtn = 0; _repeat.Stop(); Cursor = Cursors.Default; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            int b = HitBtn(e.Location);
+            if (b != 0 && e.Button == MouseButtons.Left)
+            {
+                _input.Focus(); _downBtn = b; Step(b); Invalidate();
+                _repeat.Interval = 420; if (CanStep(b)) _repeat.Start();      // a short pause, then it repeats
+            }
+            else _input.Focus();
+            base.OnMouseDown(e);
+        }
+        protected override void OnMouseUp(MouseEventArgs e) { _downBtn = 0; _repeat.Stop(); Invalidate(); base.OnMouseUp(e); }
+        protected override void Dispose(bool disposing) { if (disposing) { _path?.Dispose(); _repeat.Dispose(); } base.Dispose(disposing); }
     }
 }
+
+/// <summary>A search box: a rounded box with the hint painted by us (so it is always centred in the box's height, in both themes, which the
+/// native placeholder is not) and an X at the end that clears the text. The text itself is a borderless TextBox (<see cref="Input"/>).
+/// While the box is empty and not being typed in, the TextBox is moved out of sight, so the hint is painted on a clear surface and nothing
+/// overlaps it; it comes back the moment the box is clicked or reached with Tab.</summary>
+sealed class SearchBox : KitControl
+{
+    public TextBox Input { get; } = new() { BorderStyle = BorderStyle.None };
+    readonly string _hint;
+    bool _hoverX;
+    const int XBox = 22, XEdge = 8;
+
+    public SearchBox(string hint, int width = 260)
+    {
+        _hint = hint; Size = new Size(width, Ui.BtnH); Margin = Padding.Empty; Font = Ui.UiFont(9.75f);
+        Input.BackColor = Ui.InputBg; Input.ForeColor = Ui.Text; Input.Font = Ui.UiFont(9.75f); Input.AccessibleName = hint.TrimEnd('…', '.');
+        Controls.Add(Input);
+        Input.TextChanged += (_, _) => PlaceInput();
+        Input.GotFocus += (_, _) => PlaceInput(); Input.LostFocus += (_, _) => PlaceInput();
+    }
+
+    Rectangle XRect => new(Width - XEdge - XBox, (Height - XBox) / 2, XBox, XBox);
+    bool HasText => Input.Text.Length > 0;
+
+    /// <summary>In place while there is text or the box has focus; out of sight otherwise (the hint shows instead).</summary>
+    void PlaceInput()
+    {
+        bool show = HasText || Input.Focused;
+        int h = Input.PreferredSize.Height;
+        Input.SetBounds(show ? 12 : -4000, (Height - h) / 2, Math.Max(10, Width - 12 - XBox - XEdge - 6), h);     // ends before the X
+        Invalidate();
+    }
+    protected override void OnLayout(LayoutEventArgs e) { base.OnLayout(e); PlaceInput(); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.Clear(Behind); Smooth(g);
+        var path = Outline(8);
+        g.FillPath(Ui.Brush(Ui.InputBg), path);
+        g.DrawPath(Ui.Pen(Input.ContainsFocus ? Ui.Green : Ui.Border), path);
+        if (!HasText && !Input.Focused)
+            TextRenderer.DrawText(g, _hint, Font, new Rectangle(13, 0, Width - 13 - XBox - XEdge, Height), Ui.Muted,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+        else if (HasText)
+        {
+            var r = XRect;
+            if (_hoverX) using (var p = Ui.RoundRect(new RectangleF(r.X, r.Y, r.Width, r.Height), 6)) g.FillPath(Ui.Brush(Ui.Raised), p);
+            var pen = Ui.Pen(_hoverX ? Ui.Text : Ui.Muted, 1.7f);
+            float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f, d = 4.5f;
+            g.DrawLine(pen, cx - d, cy - d, cx + d, cy + d); g.DrawLine(pen, cx - d, cy + d, cx + d, cy - d);
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        bool over = HasText && XRect.Contains(e.Location);
+        if (over != _hoverX) { _hoverX = over; Cursor = over ? Cursors.Hand : Cursors.IBeam; Ui.Tip.SetToolTip(this, over ? "Clear The Search" : ""); Invalidate(); }
+        base.OnMouseMove(e);
+    }
+    protected override void OnMouseLeave(EventArgs e) { if (_hoverX) { _hoverX = false; Invalidate(); } base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (HasText && XRect.Contains(e.Location)) { Input.Clear(); _hoverX = false; }
+        Input.Focus(); base.OnMouseDown(e);
+    }
+}
+
 
 /// <summary>The top of every page: a title (22 px bold), a one-line subtitle, and the page's action buttons on the right.</summary>
 sealed class PageHeader : Panel

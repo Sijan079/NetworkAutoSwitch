@@ -35,8 +35,8 @@ sealed partial class MainForm
         _logKinds = new Segmented("All", "Switches", "Blocks", "Errors", "Commands") { Location = new Point(0, 6) };
         Ui.Tip.SetToolTip(_logKinds, "Show only one kind of line. Blocks includes unblocks.");
         _logKinds.SelectedChanged += i => { _logFilter = i; RefilterLog(); };
-        var search = new TextBox { PlaceholderText = "Search the log…" };
-        var field = SearchField(search);
+        var field = new SearchBox("Search The Log…");
+        var search = field.Input;
         field.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         bar.Controls.Add(_logKinds); bar.Controls.Add(field);
         bar.Resize += (_, _) => field.Location = new Point(Math.Max(_logKinds.Right + 12, bar.Width - field.Width), 6 + (_logKinds.Height - field.Height) / 2);
@@ -70,13 +70,6 @@ sealed partial class MainForm
         return page;
     }
 
-    /// <summary>The kit Field without its label, so the box lines up with the segmented control beside it.</summary>
-    static Control SearchField(TextBox box)
-    {
-        var f = new Field("", box) { Width = 260, Height = 36, BackColor = Ui.Bg, Margin = Padding.Empty };
-        foreach (Control c in f.Controls) if (c is Label) c.Visible = false;
-        return f;
-    }
 
     /// <summary>All lines of the log file (or the last <paramref name="n"/>), oldest first. Opened shared because the tray is writing to it.</summary>
     static List<string> ReadLines(int n = int.MaxValue)

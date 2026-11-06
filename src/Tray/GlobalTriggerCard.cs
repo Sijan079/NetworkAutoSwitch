@@ -22,7 +22,7 @@ sealed class GlobalTriggerCard : Card
         SetHint("Every watch rule uses this unless you give it its own.\nA watched program that receives more than this is blocked until you unblock it on the Dashboard.");
         var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Margin = new Padding(0) };
         flow.Controls.Add(new Field("Block When Downloading More Than", _mb, "MB") { Width = 290, Margin = new Padding(0, 0, 14, 0) });
-        flow.Controls.Add(new Field("Within", _win, "seconds") { Width = 140, Margin = new Padding(0, 0, 14, 0) });
+        flow.Controls.Add(new Field("Within", _win, "seconds") { Width = 190, Margin = new Padding(0, 0, 14, 0) });
         flow.Controls.Add(_note);
         Body.Controls.Add(flow);
         foreach (var n in new[] { _mb, _win }) n.ValueChanged += (_, _) => { UpdateRate(); if (!_quiet) Changed?.Invoke(); };

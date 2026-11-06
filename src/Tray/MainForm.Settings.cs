@@ -113,7 +113,7 @@ sealed partial class MainForm
         updT.Checked = AppSettings.Load().CheckForUpdates;
         updT.CheckedChanged += (_, _) => { try { AppSettings.Update(x => x.CheckForUpdates = updT.Checked); } catch { } };
         _logLines.Value = Math.Min(_logLines.Maximum, Math.Max(_logLines.Minimum, _maxLogRows));
-        var fLog = new Field("", Bare(_logLines), "lines") { Width = 140 };
+        var fLog = new Field("", Bare(_logLines), "lines") { Width = 200 };
         foreach (Control c in fLog.Controls) if (c is Label) c.Visible = false;     // no label above the box: the row's title is the label
         fLog.Height = 36;
 

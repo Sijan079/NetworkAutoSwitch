@@ -138,8 +138,9 @@ sealed class PolicyEditor : UserControl
         ownRow.Controls.AddRange(new Control[] { _own, ownLbl, ownNote });
         Ui.Tip.SetToolTip(_own, "On = this rule gets its own MB and seconds.\nOff = it uses the global trigger above.");
         var ownFields = new FlowLayoutPanel { WrapContents = false, BackColor = Ui.CardBg, Height = 58 };
-        ownFields.Controls.Add(new Field("More Than", _mb, "MB") { Width = 150, Margin = new Padding(0, 0, 14, 0) });
-        ownFields.Controls.Add(new Field("Within", _win, "seconds") { Width = 140, Margin = new Padding(0, 0, 14, 0) });
+        ownFields.Controls.Add(new Field("More Than", _mb, "MB") { Width = 160, Margin = new Padding(0, 0, 14, 0) });
+        ownFields.Controls.Add(new Field("Within", _win, "seconds") { Width = 190, Margin = new Padding(0, 0, 14, 0) });
+        Ui.Tip.SetToolTip(_rate, ""); _rate.Visible = false;   // the rate fits no room beside the wider fields: it is shown in their tooltips (UpdateRate)
         ownFields.Controls.Add(_rate);
         _ownFields = ownFields;
 
@@ -256,7 +257,7 @@ sealed class PolicyEditor : UserControl
         _list.Invalidate();       // the details line follows the trigger and the action
     }
 
-    void UpdateRate() => _rate.Text = $"≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
+    void UpdateRate() { _rate.Text = $"≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s"; Ui.Tip.SetToolTip(_mb, "This rule's own limit: " + _rate.Text); Ui.Tip.SetToolTip(_win, "This rule's own limit: " + _rate.Text); }
 
     /// <summary>Rule names end up in firewall commands, so Core only lets plain name characters through. Say so while typing,
     /// instead of letting the name be cleaned up silently when the policy is read back.</summary>

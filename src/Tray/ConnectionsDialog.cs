@@ -107,8 +107,8 @@ sealed class ConnectionsPanel : Panel
         var grid = _grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         int Row(float h, SizeType st = SizeType.Absolute) { grid.RowStyles.Add(new RowStyle(st, h)); return grid.RowStyles.Count - 1; }
-        int r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // the buttons sit above the lists they act on
-        r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
+        int r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
+        r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // the buttons sit on top of the Unlabelled list (where most sorting starts)
         _lowerRow = Row(44, SizeType.Percent); grid.Controls.Add(_noneCard, 0, _lowerRow); grid.Controls.Add(_barredCard, 1, _lowerRow);
         _adapterRow = Row(AdapterRowHeight(false)); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
         grid.RowCount = grid.RowStyles.Count;
