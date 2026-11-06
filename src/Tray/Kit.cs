@@ -274,12 +274,19 @@ sealed class Field : Panel
         protected override void OnLayout(LayoutEventArgs e)
         {
             base.OnLayout(e);
+            if (_input is NoWheelComboBox cb)   // draws its own rounded box: it takes the whole field, and the field draws nothing around it
+            {
+                cb.ItemHeight = Math.Max(16, Height - 6);   // a combo's height follows its item height (+6 for its frame)
+                cb.SetBounds(0, Math.Max(0, (Height - cb.Height) / 2), Width, cb.Height);
+                return;
+            }
             int h = _input.PreferredSize.Height, inset = _input is ComboBox ? 2 : 12;
             _input.SetBounds(inset, Math.Max(1, (Height - h) / 2), Math.Max(10, Width - inset * 2 - SuffixW + (_input is ComboBox ? 0 : 0)), h);
         }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics; g.Clear(Parent?.BackColor ?? Ui.CardBg);
+            if (_input is NoWheelComboBox) return;     // the dropdown draws its own box; a second border here would double it
             g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.Half;
             if (_path is null || _pathSize != Size) { _path?.Dispose(); _path = Ui.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 8); _pathSize = Size; }
             g.FillPath(Ui.Brush(Ui.InputBg), _path);

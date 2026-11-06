@@ -62,15 +62,15 @@ sealed class NoWheelComboBox : ComboBox
         var bounds = new Rectangle(0, 0, Width, Height);
         using (var bg = new SolidBrush(Parent?.BackColor ?? Ui.CardBg)) g.FillRectangle(bg, bounds);
         var box = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-        using var path = new GraphicsPath(); float d = 12;
+        using var path = new GraphicsPath(); float d = 16;      // radius 8, like every field
         path.AddArc(box.Left, box.Top, d, d, 180, 90); path.AddArc(box.Right - d, box.Top, d, d, 270, 90);
         path.AddArc(box.Right - d, box.Bottom - d, d, d, 0, 90); path.AddArc(box.Left, box.Bottom - d, d, d, 90, 90); path.CloseFigure();
         using (var fill = new SolidBrush(_hot && Enabled ? Ui.Hover : Ui.InputBg)) g.FillPath(fill, path);
-        using (var pen = new Pen(Focused ? Ui.Blue : Ui.Border)) g.DrawPath(pen, path);
+        using (var pen = new Pen(Focused || DroppedDown ? Ui.Green : Ui.Border)) g.DrawPath(pen, path);      // focus is teal on every field
         g.SmoothingMode = SmoothingMode.None;
         Color fg = Enabled ? Ui.Text : Ui.Muted;
         string text = SelectedIndex >= 0 ? GetItemText(SelectedItem) : Text;
-        var tr = new Rectangle(10, 0, Width - 38, Height);
+        var tr = new Rectangle(12, 0, Width - 40, Height);      // same text inset as the other fields
         TextRenderer.DrawText(g, text, Font, tr, fg, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         using var chevron = Ui.GlyphBold("", 14, Ui.Muted);      // ChevronDown
         g.DrawImage(chevron, Width - 24, (Height - 14) / 2);
