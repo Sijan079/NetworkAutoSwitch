@@ -413,7 +413,7 @@ sealed class NavShell : Panel
             // logo + name + version
             _logo ??= Logo.Draw(32);
             g.DrawImage(_logo, 20, 20, 32, 32);
-            TextRenderer.DrawText(g, "NetworkAutoSwitch", Ui.UiFont(10f, Weight.Bold), new Rectangle(62, 18, Width - 70, 20), Ui.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, "NetworkAutoSwitch", Ui.UiFont(9.25f, Weight.Bold), new Rectangle(60, 18, Width - 62, 20), Ui.Text, TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             TextRenderer.DrawText(g, "v" + AppInfo.Version, Ui.UiFont(8.25f), new Rectangle(62, 37, Width - 70, 16), Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
             for (int i = 0; i < _items.Count; i++)

@@ -3,23 +3,27 @@ using System.Windows.Forms;
 
 namespace NetworkAutoSwitch.Tray;
 
-/// <summary>The global trigger (X MB within Y seconds) as its own card, so it can live on the Settings page while the rules editor on the Policy page reads it.</summary>
+/// <summary>The global trigger (X MB within Y seconds) as its own card at the top of the Backup Rules page; the rules editor below reads it.</summary>
 sealed class GlobalTriggerCard : Card
 {
-    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 0.5m, Value = 2, Width = 84 };
-    readonly NoWheelNumeric _win = new() { Minimum = 1, Maximum = 600, Value = 10, Width = 68 };
-    readonly Label _rate = new() { AutoSize = true, ForeColor = Ui.Muted, Padding = new Padding(4, 6, 0, 0), BackColor = Ui.CardBg };
+    /// <summary>The height the card needs: header, one row of kit fields, padding.</summary>
+    public const int PreferredHeight = 4 + 44 + 2 + 58 + 14 + 4;
+
+    readonly NoWheelNumeric _mb = new() { DecimalPlaces = 1, Minimum = 0.1m, Maximum = 10000, Increment = 0.5m, Value = 2 };
+    readonly NoWheelNumeric _win = new() { Minimum = 1, Maximum = 600, Value = 10 };
+    readonly Label _note = new() { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.CardBg, Font = Ui.UiFont(9f), Margin = new Padding(4, 32, 0, 0), UseMnemonic = false };
     bool _quiet;
 
     /// <summary>Raised when YOU change a number (not when the values are loaded).</summary>
     public event Action? Changed;
 
-    public GlobalTriggerCard() : base(Ui.Download, "Global Trigger")
+    public GlobalTriggerCard() : base("", "Global Trigger")
     {
         SetHint("Every watch rule uses this unless you give it its own.\nA watched program that receives more than this is blocked until you unblock it on the Dashboard.");
-        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg };
-        Label L(string t) => new() { Text = t, AutoSize = true, Padding = new Padding(2, 6, 8, 0), ForeColor = Ui.Muted, BackColor = Ui.CardBg };
-        flow.Controls.AddRange(new Control[] { L("Block Above"), _mb, L("MB Per"), _win, L("s"), _rate });
+        var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Ui.CardBg, Margin = new Padding(0) };
+        flow.Controls.Add(new Field("Block When Downloading More Than", _mb, "MB") { Width = 290, Margin = new Padding(0, 0, 14, 0) });
+        flow.Controls.Add(new Field("Within", _win, "seconds") { Width = 140, Margin = new Padding(0, 0, 14, 0) });
+        flow.Controls.Add(_note);
         Body.Controls.Add(flow);
         foreach (var n in new[] { _mb, _win }) n.ValueChanged += (_, _) => { UpdateRate(); if (!_quiet) Changed?.Invoke(); };
         UpdateRate();
@@ -37,5 +41,5 @@ sealed class GlobalTriggerCard : Card
         _quiet = false; UpdateRate();
     }
 
-    void UpdateRate() => _rate.Text = $"≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
+    void UpdateRate() => _note.Text = $"Rules without their own numbers use this.  ≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
 }

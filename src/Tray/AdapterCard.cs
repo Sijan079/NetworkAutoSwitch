@@ -4,78 +4,127 @@ using NetworkAutoSwitch.Core;
 
 namespace NetworkAutoSwitch.Tray;
 
-/// <summary>One connection on the dashboard. Left: network name, adapter, average ping, uptime. Right: the current ping, number on top and "ms" below it.
-/// The card of the connection in use is filled with its role colour.</summary>
+/// <summary>One connection on the dashboard (docs/ui-mockups Main.dc.html): an icon box, the kind (MAIN / BACKUP) in its role colour,
+/// the network and the adapter, an IN USE or STANDBY chip, then Status / Latency / Uptime and one muted note under a divider.
+/// The card of the connection in use is filled with its role colour, with every text on it in Ui.OnAccent (or a mix of it).
+/// Everything is painted by one control, from strings prepared in Show(), so a paint allocates nothing.</summary>
 sealed class AdapterCard : Card
 {
-    static Color Blend(Color a, Color b, float t) => Color.FromArgb((int)(a.R * t + b.R * (1 - t)), (int)(a.G * t + b.G * (1 - t)), (int)(a.B * t + b.B * (1 - t)));
+    /// <summary>Loading placeholders that match the layout: kind, network, adapter, then the stats line.</summary>
+    public static readonly (float W, int H)[] Bars = { (0.22f, 12), (0.45f, 18), (0.30f, 12), (0.85f, 22) };
 
-    /// <summary>Loading placeholders that match the layout: four lines on the left (the right side stays quiet).</summary>
-    public static readonly (float W, int H)[] Bars = { (0.45f, 18), (0.28f, 12), (0.40f, 12), (0.30f, 12) };
+    readonly Face _face;
+    readonly Color _role;
+    readonly string _kind;
+    string _glyph;
+    string _net = "", _adapter = "", _status = "-", _latency = "-", _uptime = "-", _note = "", _chip = "STANDBY", _statusTip = "";
+    Color _statusInk;
+    bool _known, _inUse;
+    Skeleton? _skel;
 
-    static int Fit(float pt, bool bold, int pad) => Ui.UiFont(pt, bold).Height + pad;       // a line is as tall as its text needs, whatever the font size or display scaling
-    static Label Line(float size, bool bold, Color color, int height) => new() { Dock = DockStyle.Top, Height = Math.Max(height, Fit(size, bold, 6)), AutoEllipsis = true, ForeColor = color, Font = Ui.UiFont(size, bold: bold), BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft };
-    readonly Label _net = Line(12f, true, Ui.Text, 28), _adapter = Line(10f, false, Ui.Muted, 22), _avg = Line(10f, false, Ui.Muted, 22), _up = Line(10f, false, Ui.Muted, 22);
-    readonly Label _ms = new() { Dock = DockStyle.Top, Height = Math.Max(54, Fit(28f, true, 8)), Font = Ui.UiFont(28f, bold: true), TextAlign = ContentAlignment.BottomCenter, BackColor = Ui.CardBg, Text = "..." };
-    readonly Label _unit = new() { Dock = DockStyle.Top, Height = Math.Max(26, Fit(11f, false, 6)), Font = Ui.UiFont(11f), ForeColor = Ui.Muted, TextAlign = ContentAlignment.TopCenter, BackColor = Ui.CardBg };
-
-    // a symbol in front of the average ping and the uptime, instead of the words
-    readonly PictureBox _avgIcon = new() { Dock = DockStyle.Left, Width = 30, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Image = Ui.GlyphBold(Ui.Speed, 22, Ui.Muted) };
-    readonly PictureBox _upIcon = new() { Dock = DockStyle.Left, Width = 30, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg, Image = Ui.GlyphBold(Ui.Up, 22, Ui.Muted) };
-    Color _iconInk = Ui.Muted;
-    static Panel Row(Label text, PictureBox icon)
+    public AdapterCard(string glyph, string title) : base("", title)
     {
-        var p = new Panel { Dock = DockStyle.Top, Height = text.Height, BackColor = Ui.CardBg };
-        text.Dock = DockStyle.Fill; p.Controls.Add(text); p.Controls.Add(icon);
-        return p;
-    }
-    void InkIcons(Color c) { if (c == _iconInk) return; _iconInk = c; _avgIcon.Image = Ui.GlyphBold(Ui.Speed, 22, c); _upIcon.Image = Ui.GlyphBold(Ui.Up, 22, c); }
-
-    public AdapterCard(string glyph, string title) : base(glyph, title)
-    {
-        var right = new Panel { Dock = DockStyle.Right, Width = 104, BackColor = Ui.CardBg };
-        right.Controls.Add(_unit); right.Controls.Add(_ms);                       // docked to the top: the last added is the first shown
-        var left = new Panel { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
-        left.Controls.Add(Row(_up, _upIcon)); left.Controls.Add(Row(_avg, _avgIcon)); left.Controls.Add(_adapter); left.Controls.Add(_net);
-        Ui.Tip.SetToolTip(_avg, "Average ping"); Ui.Tip.SetToolTip(_avgIcon, "Average ping");
-        Ui.Tip.SetToolTip(_up, "Uptime: the share of checks that got an answer"); Ui.Tip.SetToolTip(_upIcon, "Uptime: the share of checks that got an answer");
-        Body.Controls.Add(left); Body.Controls.Add(right);
+        _glyph = glyph; _kind = title.ToUpperInvariant();
+        _role = title == "Main" ? Ui.Green : Ui.Amber;       // Main is teal and Backup amber everywhere in the app
+        _statusInk = Ui.Muted;
+        // the kind label is drawn inside the face (in the role colour), so the card's own header row is not used
+        foreach (Control c in Controls) if (c != Body) c.Visible = false;
+        Body.Padding = new Padding(14, 14, 14, 10);
+        _face = new Face(this) { Dock = DockStyle.Fill, BackColor = Ui.CardBg };
+        Body.Controls.Add(_face);
+        // Card.SetLoading puts a Skeleton (painted in the card colour) into the body: while it shows, drop the fill so the
+        // bars do not sit in a plain rectangle in the middle of a teal card; the fill comes back when the bars go.
+        Body.ControlAdded += (_, e) => { if (e.Control is Skeleton s) { _skel = s; s.VisibleChanged += (_, _) => ApplyFill(); } };
     }
 
-    bool _known, _selected;
+    /// <summary>The icon in the box follows the adapter kind (Wi-Fi, cable, phone).</summary>
+    public void SetGlyph(string glyph) { if (glyph == _glyph) return; _glyph = glyph; _face.Invalidate(); }
 
     /// <summary>The network name and the adapter it is on.</summary>
     public void SetIdentity(string network, string adapter)
     {
-        _known = network.Length > 0;
-        _net.Text = _known ? network : "Unknown network";
-        _net.ForeColor = Fill is not null ? Color.White : _known ? Ui.Text : Ui.Muted;
-        _adapter.Text = adapter;
+        bool known = network.Length > 0; string net = known ? network : "Unknown Network";
+        if (net == _net && adapter == _adapter && known == _known) return;      // called on every probe: repaint only when it changed
+        _known = known; _net = net; _adapter = adapter; _face.Invalidate();
     }
 
-    /// <summary>Shows one measurement. <paramref name="selected"/> = this is the connection in use: its colors are shown in full.
-    /// The other card is muted (grey ping, grey name), so the one in use stands out even without looking at the border.</summary>
-    public void Show(ProbeResult r, double uptimePct, int? avgMs, Color? inUse, bool selected)
+    /// <summary>Shows one measurement. <paramref name="inUse"/> = this is the connection in use (filled card, IN USE chip).</summary>
+    public void Show(ProbeResult r, bool hasData, double uptimePct, bool inUse, bool paused, string note)
     {
-        _selected = selected;
-        _net.ForeColor = _known ? Ui.Text : Ui.Muted;
-        _avg.Text = avgMs is int a ? a + " ms" : "-";
-        _up.Text = $"{uptimePct:0.#}%";
-        if (r.Healthy) { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = r.Ms.ToString(); _ms.ForeColor = Ui.Text; _unit.Text = "ms"; Ui.Tip.SetToolTip(_ms, ""); }
-        else { _ms.Font = Ui.UiFont(28f, bold: true); _ms.Text = "\u2014"; _ms.ForeColor = Ui.Red; _unit.Text = ""; Ui.Tip.SetToolTip(_ms, r.Detail); }   // a ping has no number when nothing answers: 0 would read as "perfect"
-        // the connection in use is painted in its role colour (green = Main, amber = Backup), with white text on it
-        Color? fill = inUse is Color u ? (u == Ui.Green ? Ui.GreenFill : Ui.AmberFill) : null;
-        if (fill is Color f)
+        string status = paused ? "Paused" : !hasData ? "None" : r.Healthy ? "Healthy" : "Down";
+        Color ink = paused || !hasData ? Ui.Muted : r.Healthy ? _role : Ui.Red;
+        string latency = hasData && r.Healthy ? r.Ms + " ms" : "—";        // no number when nothing answers: 0 would read as "perfect"
+        string uptime = hasData ? $"{uptimePct:0.#} %" : "—";
+        string chip = paused ? "PAUSED" : inUse ? "IN USE" : "STANDBY";
+        string tip = hasData && !r.Healthy ? r.Detail : "";
+        if (status == _status && ink == _statusInk && latency == _latency && uptime == _uptime && chip == _chip && note == _note && inUse == _inUse && tip == _statusTip) return;
+        _status = status; _statusInk = ink; _latency = latency; _uptime = uptime; _chip = chip; _note = note;
+        if (tip != _statusTip) { _statusTip = tip; Ui.Tip.SetToolTip(_face, tip.Length > 0 ? tip : (_kind == "MAIN" ? "Main connection" : "Backup connection")); }
+        if (inUse != _inUse) { _inUse = inUse; ApplyFill(); }
+        _face.Invalidate();
+    }
+
+    void ApplyFill()
+    {
+        bool fill = _inUse && _skel is not { Visible: true };
+        SetFill(fill ? _role : null, fill ? Ui.OnAccent : null);
+    }
+
+    /// <summary>The painted content of the card.</summary>
+    sealed class Face : Control
+    {
+        readonly AdapterCard _o;
+        public Face(AdapterCard o)
         {
-            Color soft = Blend(Color.White, f, 0.8f);
-            SetFill(f, soft);
-            _net.ForeColor = Color.White; _ms.ForeColor = Color.White;
-            _adapter.ForeColor = _avg.ForeColor = _up.ForeColor = _unit.ForeColor = soft; InkIcons(Color.White);
+            _o = o;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            Ui.Tip.SetToolTip(this, o._kind == "MAIN" ? "Main connection" : "Backup connection");
         }
-        else
+
+        const TextFormatFlags Line = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+
+        protected override void OnPaint(PaintEventArgs e)
         {
-            SetFill(null, null);
-            _adapter.ForeColor = _avg.ForeColor = _up.ForeColor = _unit.ForeColor = Ui.Muted; InkIcons(Ui.Text);
+            var g = e.Graphics; g.Clear(BackColor);
+            bool filled = _o.Fill is not null;
+            Color text = filled ? Ui.OnAccent : Ui.Text;
+            Color muted = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.72f) : Ui.Muted;
+            Color role = filled ? Ui.OnAccent : _o._role;
+            Color line = filled ? Ui.Mix(Ui.OnAccent, BackColor, 0.25f) : Ui.Border;
+            int w = Width;
+
+            // icon box: 40 x 40, radius 10, role-coloured outline and glyph
+            DashPaint.Outline(g, 0, 0, 40, 40, 10, role);
+            g.DrawImage(Ui.GlyphCached(_o._glyph, 22, role), 9, 9);
+
+            // chip on the right: the card in use gets an OnAccent outline on its fill; standby is a muted outline
+            int chipW = DashPaint.ChipWidth(_o._chip);
+            DashPaint.Chip(g, _o._chip, filled ? Ui.OnAccent : Ui.Muted, w - chipW - 1, 12, false);
+
+            int tx = 52, tw = Math.Max(10, w - tx - chipW - 10);
+            TextRenderer.DrawText(g, _o._kind, Ui.UiFont(8.25f, Weight.Bold), new Rectangle(tx, -1, tw, 16), role, Line);
+            TextRenderer.DrawText(g, _o._net, Ui.UiFont(12f, Weight.Bold), new Rectangle(tx, 14, tw, 24), _o._known ? text : muted, Line);
+            TextRenderer.DrawText(g, _o._adapter, Ui.UiFont(9f), new Rectangle(tx, 38, tw, 18), muted, Line);
+
+            // three equal stat columns
+            int col = (w - 24) / 3, sy = 70;
+            for (int i = 0; i < 3; i++)
+            {
+                int x = i * (col + 12);
+                string label = i == 0 ? "Status" : i == 1 ? "Latency" : "Uptime";
+                string value = i == 0 ? _o._status : i == 1 ? _o._latency : _o._uptime;
+                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._statusInk) : text;      // red on teal fails contrast: on a fill it is OnAccent
+                TextRenderer.DrawText(g, label, Ui.UiFont(8.25f), new Rectangle(x, sy, col, 16), muted, Line);
+                TextRenderer.DrawText(g, value, Ui.UiFont(11.25f, Weight.Bold), new Rectangle(x, sy + 16, col, 24), ink, Line);
+            }
+
+            // divider + note
+            int dy = sy + 48;
+            if (Height > dy + 8)
+            {
+                g.DrawLine(Ui.Pen(line), 0, dy, w, dy);
+                TextRenderer.DrawText(g, _o._note, Ui.UiFont(9f), new Rectangle(0, dy + 10, w, 18), muted, Line);
+            }
         }
     }
 }

@@ -245,6 +245,7 @@ sealed partial class MainForm
             finally { arranging = false; }
         }
         _settingsRelayout = Arrange;
+        foreach (var c in new Control[] { conn, switching, app, upd }) c.Dock = DockStyle.None;   // a Card fills its parent by default; here Arrange() places each one
         content.Controls.AddRange(new Control[] { conn, switching, app, upd });
         content.Resize += (_, _) => Arrange();
         Arrange();

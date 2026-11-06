@@ -86,6 +86,20 @@ static class UiSelfTest
             Say($"Build ok: {built.BackupRules.Count} rules, last = {built.BackupRules[^1].Name} [{string.Join(", ", built.BackupRules[^1].Exes!)}] folder {built.BackupRules[^1].Folder}");
             int dup = ed.AddPrograms(new[] { @"C:\Program Files (x86)\Steam\steam.exe" });
             Say($"adding an already-watched program -> {dup} added, message: {said}");
+            // a picture of the editor (the global trigger card above it, as on the Backup Rules page), next to the result file.
+            // This test does not take the app's single-instance lock, so it can render while another copy is running.
+            using (var shot = new Form { StartPosition = FormStartPosition.Manual, Location = new System.Drawing.Point(-32000, -32000), Opacity = 0, Width = 904, Height = 800, BackColor = Ui.Bg })
+            {
+                var global = new GlobalTriggerCard { Dock = DockStyle.Top, Height = GlobalTriggerCard.PreferredHeight };
+                var ed2 = new PolicyEditor(global) { Dock = DockStyle.Fill };
+                ed2.Connect(() => seen, (t, err) => ed2.Status.Text = t);
+                shot.Controls.Add(ed2); shot.Controls.Add(new Panel { Dock = DockStyle.Top, Height = Ui.Gap, BackColor = Ui.Bg }); shot.Controls.Add(global);
+                shot.Show(); Ui.SkinForm(shot); ed2.SetPolicy(BackupPolicy.Parse(File.ReadAllText(Paths.DefaultPolicy))); Application.DoEvents();
+                using var bmp = new System.Drawing.Bitmap(shot.Width, shot.Height);
+                shot.DrawToBitmap(bmp, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
+                bmp.Save(Path.ChangeExtension(outFile, ".rules.png"));
+                Say("rules editor rendered");
+            }
             Say("RESULT: no exception");
         }
         catch (Exception e) { Say("RESULT: EXCEPTION\r\n" + e); }

@@ -630,6 +630,17 @@ static class SelfTest
         Check("tables: saying 'this is Main / Backup' puts the network on the right table in EITHER mode (and takes it off the other)",
             new[] { BL, WL }.All(md => { var (m1, b1) = BackupNetworks.WithRole("N", NetworkRole.Main, md, new[] { "N" }, new[] { "N" }); var (m2, b2) = BackupNetworks.WithRole("N", NetworkRole.Backup, md, noNets, noNets);
                 return BackupNetworks.RoleOf("N", md, m1, b1) == NetworkRole.Main && BackupNetworks.RoleOf("N", md, m2, b2) == NetworkRole.Backup; }));
+        // the Networks page groups by RoleOf and writes with WithRole: Make Main must land in Main Networks and Make Backup in Backup Networks from ANY start, in both modes
+        // (the user's bug was Blacklist showing the raw tables, where Make Main put a network in the "Backup" table), and Unlabel (off both tables) must give Unlabelled
+        Check("networks page: Make Main / Make Backup always give that role, from neither / main-only / backup-only / both tables, in both modes; off both = unlabelled",
+            new[] { BL, WL }.All(md => new[] { (noNets, noNets), (new[] { "N" }, noNets), (noNets, new[] { "N" }), (new[] { "N" }, new[] { "N" }) }.All(start =>
+            {
+                var (m1, b1) = BackupNetworks.WithRole("N", NetworkRole.Main, md, start.Item1, start.Item2.Append("Other"));
+                var (m2, b2) = BackupNetworks.WithRole("N", NetworkRole.Backup, md, start.Item1, start.Item2);
+                var (m3, b3) = BackupNetworks.WithRole("N", NetworkRole.Unlabelled, md, start.Item1, start.Item2);
+                return BackupNetworks.RoleOf("N", md, m1, b1) == NetworkRole.Main && BackupNetworks.RoleOf("N", md, m2, b2) == NetworkRole.Backup
+                    && BackupNetworks.RoleOf("N", md, m3, b3) == NetworkRole.Unlabelled && b1.Contains("Other");
+            })));
         Check("protect: unlabelled, backup and barred networks are protected when they are the main connection; main and either are not",
             BackupNetworks.NeedsProtection(NetworkRole.Unlabelled) && BackupNetworks.NeedsProtection(NetworkRole.Backup) && BackupNetworks.NeedsProtection(NetworkRole.Barred) && !BackupNetworks.NeedsProtection(NetworkRole.Main) && !BackupNetworks.NeedsProtection(NetworkRole.Either));
         Check("ask once: an unlabelled Wi-Fi or Ethernet network is asked about", BackupNetworks.ShouldAsk("Hotel", AdapterKind.WiFi, BL, noNets, noNets, noNets) && BackupNetworks.ShouldAsk("Office", AdapterKind.Ethernet, WL, noNets, noNets, noNets));

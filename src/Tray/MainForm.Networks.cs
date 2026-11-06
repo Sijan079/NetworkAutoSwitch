@@ -10,7 +10,8 @@ sealed partial class MainForm
 {
     ConnectionsPanel? _networks;
 
-    /// <summary>The Networks page: the Main and Backup network tables, and the adapters under Advanced.</summary>
+    /// <summary>The Networks page: every network grouped by what it becomes (Main Networks, Backup Networks, Unlabelled, Barred), the mode, and the adapters.
+    /// The panel brings its own page header (title, Save and Revert), so the welcome dialog that hosts the same panel looks the same.</summary>
     Control NetworksPage()
     {
         var page = Page();
