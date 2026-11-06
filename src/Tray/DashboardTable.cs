@@ -6,7 +6,7 @@ namespace NetworkAutoSwitch.Tray;
 /// <summary>One cell: text, or a chip when <see cref="Chip"/> is set (the text is drawn inside it in that colour).</summary>
 readonly record struct DashCell(string Text, Color? Chip = null);
 
-/// <summary>One row. <see cref="Action"/> = what a small icon button at the end of the row does ("Allow" shows an open lock, "Block Now" a closed one; null = no button), named in <see cref="ActionTip"/>; <see cref="Key"/> is handed back on a click.</summary>
+/// <summary>One row. <see cref="Action"/> = what a small icon button at the end of the row does ("Allow" on a blocked row, "Block Now" on an allowed one; null = no button), named in <see cref="ActionTip"/>; <see cref="Key"/> is handed back on a click.</summary>
 sealed record DashRow(DashCell[] Cells, string? Action, string Key, string Tip, bool Danger = false, string? ActionTip = null)
 {
     public bool Same(DashRow o)
@@ -111,8 +111,8 @@ sealed class DashTable : Control
                 Color edge = row.Danger ? Ui.Red : Ui.Border, ink = row.Danger ? Ui.Red : Ui.Text;
                 Color bg = row.Danger ? (hot ? Ui.Tint(Ui.Red, 0.14f) : BackColor) : hot ? Ui.Mix(Ui.Text, Ui.Raised, 0.07f) : Ui.Raised;
                 DashPaint.Fill(g, b.X, b.Y, b.Width, b.Height, 7, bg); DashPaint.Outline(g, b.X, b.Y, b.Width, b.Height, 7, edge);
-                // an icon, not a word: an open lock lets it through (Allow), a closed one blocks it again (Block Now); the tooltip names it
-                g.DrawImage(Ui.GlyphCached(a.StartsWith("Allow", StringComparison.Ordinal) ? Ui.Unlock : Ui.Lock, 18, ink), b.X + (b.Width - 18) / 2, b.Y + (b.Height - 18) / 2);
+                // the icon shows the row's STATE, not the action: a blocked program has a closed lock, an allowed one an open lock; the tooltip names what a click does
+                g.DrawImage(Ui.GlyphCached(a.StartsWith("Allow", StringComparison.Ordinal) ? Ui.Lock : Ui.Unlock, 18, ink), b.X + (b.Width - 18) / 2, b.Y + (b.Height - 18) / 2);
             }
             g.DrawLine(Ui.Pen(Ui.Border), 0, y + RowH - 1, Width, y + RowH - 1);
         }
