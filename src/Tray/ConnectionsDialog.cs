@@ -110,7 +110,7 @@ sealed class ConnectionsPanel : Panel
         int r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
         _lowerRow = Row(44, SizeType.Percent); grid.Controls.Add(_noneCard, 0, _lowerRow); grid.Controls.Add(_barredCard, 1, _lowerRow);
         r = Row(48); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);
-        _adapterRow = Row(92); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
+        _adapterRow = Row(AdapterRowHeight(false)); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
         grid.RowCount = grid.RowStyles.Count;
 
         Controls.Add(grid); Controls.Add(modeRow); Controls.Add(_header);       // docked last to first: header on top, then the mode row, the grid fills the rest
@@ -243,12 +243,16 @@ sealed class ConnectionsPanel : Panel
 
     void MarkDirty() { _dirty = true; if (_status.ForeColor != Ui.Red) { _status.Text = "Not saved yet."; _status.ForeColor = Ui.Muted; } }
 
+    // The card's row is worked out from its parts (not a fixed number), so a spacing change can never cut the card short again:
+    // card inset 4 + header 48 + body padding 4 / 14 + inset 4, the content (one text line, or a field: label 22 + box 36), and the Gap under the card.
+    static int AdapterRowHeight(bool on) => 4 + 48 + 4 + (on ? 22 + 36 : 24) + 14 + 4 + Ui.Gap;
+
     /// <summary>The adapter card: one muted line while the app picks the adapters, the two fields when you pick them. Turning it off goes back to Automatic.</summary>
     void ShowAdapters()
     {
         bool on = _chooseAdapters.Checked;
         _fields.Visible = on; _autoLine.Visible = !on;
-        _grid.RowStyles[_adapterRow].Height = on ? 128 : 92;
+        _grid.RowStyles[_adapterRow].Height = AdapterRowHeight(on);
         if (!on && !_loading && (_main.SelectedIndex != 0 || _backup.SelectedIndex != 0)) { _main.SelectedIndex = 0; _backup.SelectedIndex = 0; }
     }
 
