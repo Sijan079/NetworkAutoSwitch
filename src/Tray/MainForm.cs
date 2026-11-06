@@ -99,9 +99,9 @@ sealed partial class MainForm : Form
         _ = Handle;
 
         _tabs.AddPage("dashboard", "Dashboard", Ui.Home, DashboardPage());
-        _tabs.AddPage("activity", "Programs", Ui.List, ActivityPage());   // keys stay as before: the tray menu and ShowWindow use them
-        _tabs.AddPage("networks", "Networks", Ui.Wifi, NetworksPage());
-        _tabs.AddPage("log", "Log", Ui.Document, LogPage());
+        _tabs.AddPage("activity", "Programs", Ui.List, ActivityPage(), minHeight: 720);   // keys stay as before: the tray menu and ShowWindow use them
+        _tabs.AddPage("networks", "Networks", Ui.Wifi, NetworksPage(), minHeight: 1000);
+        _tabs.AddPage("log", "Log", Ui.Document, LogPage(), minHeight: 560);
         _tabs.AddPage("policy", "Backup Rules", Ui.Shield, PolicyPage());
         _tabs.AddPage("settings", "Settings", Ui.Settings, SettingsPage());
         Controls.Add(_tabs);
@@ -170,7 +170,9 @@ sealed partial class MainForm : Form
     }
 
     /// <summary>A page: padding all round, the right edge sits one gap short because cards carry their own right margin.</summary>
-    static Panel Page() => new() { BackColor = Ui.Bg, Padding = new Padding(Ui.Pad, Ui.Gap, Ui.Pad - Ui.Gap, Ui.Pad - Ui.Gap) };
+    // the same frame on every page: 28 px from the rail and the window edge (cards carry a Gap on their right and bottom, so it is taken off here)
+    static Panel Page() => new() { BackColor = Ui.Bg, Padding = new Padding(PageSide, 0, PageSide - Ui.Gap, 24 - Ui.Gap) };
+    public const int PageSide = 28;
 
     // ---------- window behaviour ----------
     public void ShowWindow(string? tab = null)
@@ -185,7 +187,7 @@ sealed partial class MainForm : Form
     /// the window is hidden behind a game. Used only by --snapshot for checking the layout.</summary>
     public void SaveSnapshots(string folder)
     {
-        Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(folder); _tabs.ShowLoading = false;
         // sample rows so the Backup Data table can be checked (this dry-run copy only; nothing real is touched)
         _engine.Usage.Add(@"C:\Program Files (x86)\Steam\steam.exe", 52_500_000, DateTime.UtcNow, "Backup"); _engine.Usage.Add(@"C:\Program Files\HoYoPlay\1.19.0.382\HYPWorker.exe", 3_200_000, DateTime.UtcNow, "Main");
         _engine.Usage.Add(@"D:\Tools\newtool.exe", 800_000, DateTime.UtcNow, "Backup"); _engine.Usage.Add(@"C:\Program Files\Mozilla Firefox\firefox.exe", 400_000, DateTime.UtcNow, "Main");

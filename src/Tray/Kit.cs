@@ -370,23 +370,88 @@ sealed class NavShell : Panel
         Controls.Add(_body); Controls.Add(_rail);
     }
 
-    public void AddPage(string key, string text, string glyph, Control page)
+    /// <param name="minHeight">The least height the page needs. A page that does not scroll by itself is wrapped in a ScrollSurface
+    /// (no scrollbar; wheel, touchpad and PageUp/PageDown), so a short window scrolls it instead of squeezing or cutting it.</param>
+    public void AddPage(string key, string text, string glyph, Control page, int minHeight = 0)
     {
-        page.Dock = DockStyle.Fill; page.Visible = false; _body.Controls.Add(page);
-        _pages.Add((key, page)); _rail.Add(key, text, glyph);
+        Control host = page;
+        if (minHeight > 0 && page is not ScrollSurface && !Contains<ScrollSurface>(page))
+        {
+            var s = new ScrollSurface { MinContentHeight = minHeight };
+            page.Dock = DockStyle.Fill; s.Content.Controls.Add(page);
+            host = s;
+        }
+        host.Dock = DockStyle.Fill; host.Visible = false; _body.Controls.Add(host);
+        _pages.Add((key, host)); _rail.Add(key, text, glyph);
         if (_pages.Count == 1) Select(key, silent: true);
     }
+
+    static bool Contains<T>(Control c) where T : Control { foreach (Control k in c.Controls) if (k is T || Contains<T>(k)) return true; return false; }
 
     /// <summary>The box at the bottom of the rail: a coloured dot, a short state ("Engine running") and one muted line under it.</summary>
     public void SetStatus(string state, Color dot, string detail) => _rail.SetStatus(state, dot, detail);
 
+    // opening a page shows a skeleton shaped like a page for a moment, while the page lays itself out behind it
+    readonly PageSkeleton _skeleton = new() { Dock = DockStyle.Fill, Visible = false };
+    /// <summary>False while pages are rendered to pictures (--snapshot), so the skeleton never covers them.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool ShowLoading { get; set; } = true;
+    readonly System.Windows.Forms.Timer _reveal = new() { Interval = 260 };
+    bool _skeletonReady;
+
     public void Select(string key, bool silent = false)
     {
         if (!_pages.Any(p => p.Key == key)) return;
+        bool changed = key != SelectedKey && SelectedKey.Length > 0;
         // only the page in view is visible, so hidden pages do no layout or painting
         foreach (var (k, page) in _pages) page.Visible = k == key;
         SelectedKey = key; _rail.Invalidate();
+        if (changed && ShowLoading && Visible && FindForm() is { Visible: true }) ShowSkeleton();
         if (!silent) Changed?.Invoke();
+    }
+
+    void ShowSkeleton()
+    {
+        if (!_skeletonReady) { _body.Controls.Add(_skeleton); _reveal.Tick += (_, _) => { _reveal.Stop(); _skeleton.Visible = false; }; _skeletonReady = true; }
+        _reveal.Stop();
+        _skeleton.Visible = true; _skeleton.BringToFront(); _skeleton.Restart();
+        _reveal.Start();
+    }
+
+    protected override void Dispose(bool disposing) { if (disposing) _reveal.Dispose(); base.Dispose(disposing); }
+
+    /// <summary>Grey blocks in the page's frame (a title bar, then cards) with a moving shine. Painted from cached paths; the animation
+    /// timer only runs while it is visible.</summary>
+    sealed class PageSkeleton : KitControl
+    {
+        readonly System.Windows.Forms.Timer _t = new() { Interval = 33 };
+        float _phase;
+        public PageSkeleton() { BackColor = Ui.Bg; _t.Tick += (_, _) => { _phase += 0.04f; Invalidate(); }; VisibleChanged += (_, _) => _t.Enabled = Visible; }
+        public void Restart() { _phase = 0; Invalidate(); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics; g.Clear(Ui.Bg); Smooth(g);
+            int x = 28, w = Width - 56, gap = 16;
+            var block = Ui.Mix(Ui.Text, Ui.CardBg, Ui.Dark ? 0.06f : 0.05f);
+            void Bar(RectangleF r, float rad) { using var p = Ui.RoundRect(r, rad); g.FillPath(Ui.Brush(block), p); }
+            void CardBox(RectangleF r)
+            {
+                using (var p = Ui.RoundRect(r, 12)) { g.FillPath(Ui.Brush(Ui.CardBg), p); g.DrawPath(Ui.Pen(Ui.Border), p); }
+                Bar(new RectangleF(r.X + 18, r.Y + 18, Math.Min(140, r.Width * 0.4f), 12), 6);
+                for (int i = 0; i < 3 && r.Y + 52 + i * 26 < r.Bottom - 20; i++) Bar(new RectangleF(r.X + 18, r.Y + 50 + i * 26, (r.Width - 36) * (i == 2 ? 0.55f : 0.85f), 12), 6);
+            }
+            Bar(new RectangleF(x, 22, 180, 26), 8);                                                 // the page title
+            float top = 76, half = (w - gap) / 2f, h1 = Math.Max(120, (Height - top - 24 - gap) * 0.42f), h2 = Math.Max(120, Height - top - 24 - gap - h1);
+            CardBox(new RectangleF(x, top, half, h1)); CardBox(new RectangleF(x + half + gap, top, half, h1));
+            CardBox(new RectangleF(x, top + h1 + gap, w, h2));
+            // the shine: a soft band sweeping left to right across everything
+            float band = Math.Max(160, Width * 0.25f), bx = -band + (Width + band * 2) * (_phase % 1.4f / 1.4f);
+            using var lg = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(bx, 0, band, Height), Color.Transparent, Color.Transparent, System.Drawing.Drawing2D.LinearGradientMode.Horizontal)
+            { InterpolationColors = new System.Drawing.Drawing2D.ColorBlend { Colors = new[] { Color.FromArgb(0, Ui.Text), Color.FromArgb(Ui.Dark ? 14 : 22, Ui.Dark ? Ui.Text : Color.White), Color.FromArgb(0, Ui.Text) }, Positions = new[] { 0f, 0.5f, 1f } } };
+            g.FillRectangle(lg, bx, 0, band, Height);
+        }
+        protected override void Dispose(bool disposing) { if (disposing) _t.Dispose(); base.Dispose(disposing); }
     }
 
     sealed class NavRail : KitControl

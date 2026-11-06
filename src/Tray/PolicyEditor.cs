@@ -96,7 +96,7 @@ sealed class PolicyEditor : UserControl
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // rule list
-        var left = new Card("", "Rules For The Backup");
+        var left = new Card("", "Rules");   // short, so the Add Program button beside it never touches it
         left.AddHeaderAction(Ui.Add, "Add Program", "Add a rule: pick programs from a list.\nYou can also drag an .exe onto this page.", PickAndAdd);
         left.Body.Padding = new Padding(14, 2, 14, 6); left.Body.Controls.Add(_list);
         _list.SelectedIndexChanged += (_, _) => { if (!_loading) ShowCurrent(); };
@@ -116,7 +116,7 @@ sealed class PolicyEditor : UserControl
         var actionLbl = new Label { Text = "What Happens On The Backup", Dock = DockStyle.Top, Height = 22, Font = Ui.UiFont(9f, Weight.SemiBold), ForeColor = Ui.Muted, BackColor = Ui.CardBg, UseMnemonic = false };
         var segRow = new Panel { Dock = DockStyle.Top, Height = 36, BackColor = Ui.CardBg };
         segRow.Controls.Add(_action); _action.Location = new Point(0, 0); _action.AccessibleName = "What happens on the backup";
-        var actionPart = new Panel { BackColor = Ui.CardBg, Height = 22 + 36 + 24 };
+        var actionPart = new Panel { BackColor = Ui.CardBg, Height = 22 + 36 };   // the explanation is a tooltip now, so no line under the choice
         actionPart.Controls.Add(_explain); actionPart.Controls.Add(segRow); actionPart.Controls.Add(actionLbl);
         Ui.Tip.SetToolTip(_action, "Watch: blocked only while it downloads fast.\nBlock: never allowed on the backup.\nUpload Cap: caps upload speed (cannot limit downloads).");
 
@@ -143,12 +143,12 @@ sealed class PolicyEditor : UserControl
         ownFields.Controls.Add(_rate);
         _ownFields = ownFields;
 
-        _remove = Ui.Btn("", "Remove Rule", "Remove the selected rule. Nothing is saved until you click Save And Apply.", RemoveRow, BtnKind.Danger);
+        _remove = Ui.Btn(Ui.Delete, "", "Remove Rule: remove the selected rule. Nothing is saved until you click Save And Apply.", RemoveRow, BtnKind.Danger);
         _remove.Margin = new Padding(0);
         _actions.Controls.Add(_remove);
 
         // top to bottom; each part carries a 12 px gap under it, and a part hidden for this action takes no room
-        Part(nameField, 0); Part(_nameProblemRow, 0); Part(new Panel { Height = Ui.Gap, BackColor = Ui.CardBg }, 0);
+        Part(nameField, 0); Part(_nameProblemRow, 0); Part(new Panel { Height = 4, BackColor = Ui.CardBg }, 0);
         Part(actionPart);
         Part(exesField, Ui.Gap, "watch"); Part(folderField, Ui.Gap, "watch");
         Part(pathField, Ui.Gap, "block", "throttle"); Part(kbpsRow, Ui.Gap, "throttle");

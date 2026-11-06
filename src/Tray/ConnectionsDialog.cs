@@ -291,7 +291,7 @@ sealed class ConnectionsDialog : Form
         Text = "Networks"; Icon = Ui.AppIcon(Ui.Blue);
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         ClientSize = new Size(820, 680); StartPosition = FormStartPosition.CenterParent; BackColor = Ui.Bg; Font = Ui.UiFont(9.5f);
-        Padding = new Padding(Ui.Pad + 4, 0, Ui.Pad + 4 - Ui.Gap, Ui.Gap);       // the cards keep a Gap on their right, as on the page
+        Padding = new Padding(0);       // the page around it already gives the standard frame
         Controls.Add(new ConnectionsPanel(engine, () => DialogResult = DialogResult.OK) { Dock = DockStyle.Fill });
         Load += (_, _) => Ui.SkinForm(this);
     }

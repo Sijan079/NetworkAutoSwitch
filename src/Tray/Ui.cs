@@ -31,7 +31,7 @@ static class ThemeSettings
 static class Ui
 {
     // ---- spacing: everything snaps to this scale ----
-    public const int Gap = 12, Pad = 16, BtnH = 36;
+    public const int Gap = 16, Pad = 16, BtnH = 36;      // Gap: between cards and between rows of controls
 
     // ---- theme palette (docs/UI-DESIGN.md). Every colour in the app comes from here. ----
     public static bool Dark { get; private set; }
@@ -380,8 +380,8 @@ sealed class Skeleton : Control
 class Card : Panel
 {
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Panel Body { get; } = new() { Dock = DockStyle.Fill, BackColor = Ui.CardBg, Padding = new Padding(14, 2, 14, 14) };
-    readonly FlowLayoutPanel _right = new() { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 8, 10, 0) };
+    public Panel Body { get; } = new() { Dock = DockStyle.Fill, BackColor = Ui.CardBg, Padding = new Padding(14, 4, 14, 14) };   // plus the 4 px inset = 18 px from the card edge
+    readonly FlowLayoutPanel _right = new() { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0, 8, 14, 0) };
     readonly PictureBox _icon = new() { Width = 20, Height = 20, SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Ui.CardBg };
     readonly Label _title = new() { AutoSize = true, ForeColor = Ui.Muted, Font = Ui.UiFont(9.4f, Weight.Bold), BackColor = Ui.CardBg, UseMnemonic = false };
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -412,7 +412,7 @@ class Card : Panel
     public Card(string glyph, string title)
     {
         BackColor = Ui.CardBg; Padding = new Padding(Inset); Margin = new Padding(0, 0, Ui.Gap, Ui.Gap); Dock = DockStyle.Fill; DoubleBuffered = true;
-        var head = _head = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Ui.CardBg };
+        var head = _head = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Ui.CardBg };
         _title.Text = title.ToUpperInvariant();
         _title.SizeChanged += (_, _) => PlaceHint();       // the info icon follows the end of the title
         head.Controls.Add(_right); head.Controls.Add(_icon); head.Controls.Add(_title);
@@ -426,7 +426,7 @@ class Card : Panel
     {
         _glyph = glyph; _icon.Visible = glyph.Length > 0;
         if (_icon.Visible) _icon.Image = Ui.GlyphCached(glyph, 18, TitleInk);
-        _icon.Location = new Point(14, 13); _title.Location = new Point(_icon.Visible ? 14 + 26 : 14, 14);
+        _icon.Location = new Point(14, 15); _title.Location = new Point(_icon.Visible ? 14 + 26 : 14, 16);
         PlaceHint();
     }
 

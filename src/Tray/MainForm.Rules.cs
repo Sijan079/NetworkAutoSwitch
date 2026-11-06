@@ -28,7 +28,7 @@ sealed partial class MainForm
 
         _editor.Dock = DockStyle.Fill; _editor.Margin = new Padding(0);
         _editor.AddAction(Ui.Btn(Ui.Check, "Save And Apply", "Check every rule and the global trigger, save them and apply them now.", SavePolicy, BtnKind.Primary));
-        _editor.AddAction(Ui.Btn(Ui.Code, "Edit As JSON", "Edit the same rules as text (for advanced use). Nothing is saved until you click Save And Apply.", EditJson));
+        _editor.AddAction(Ui.Btn(Ui.Code, "", "Edit As JSON: the same rules as text (for advanced use). Nothing is saved until you click Save And Apply.", EditJson));
         _editor.AddAction(Ui.Btn(Ui.Undo, "", "Revert: discard unsaved changes.", RevertAll));
         _policyStatus.Add(_editor.Status);
 
