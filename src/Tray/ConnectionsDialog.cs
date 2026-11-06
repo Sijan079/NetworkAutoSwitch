@@ -65,9 +65,6 @@ sealed class ConnectionsPanel : Panel
             + "Whitelist: a network is saved as allowed in its role. A network allowed in both is marked Either.\n"
             + "Each mode keeps its own lists, so switching shows the networks as that mode has them.");
         _mode.SelectedChanged += i => { if (_loading) return; _modeNow = (ListMode)i; MarkDirty(); Refill(); };
-        var modeRow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 50, BackColor = Ui.Bg, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
-        _mode.Margin = new Padding(0, 0, 14, 0);
-        modeRow.Controls.Add(_mode); modeRow.Controls.Add(_modeHint);
 
         // the groups, each a card: what a network becomes
         _mainCard.SetHint("Networks that become your main connection, on whichever adapter they are on.\nEITHER: allowed as main and as backup (a Whitelist network on both lists). It is shown in both groups.");
@@ -88,6 +85,10 @@ sealed class ConnectionsPanel : Panel
         _unlabel = Ui.Btn(Ui.Undo, "Unlabel", "Take the selected network out of both groups. It is treated as backup until you sort it again.", () => SetRole(NetworkRole.Unlabelled));
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Ui.Bg, WrapContents = false, Margin = new Padding(0, 0, Ui.Gap, 0), Padding = new Padding(0) };
         actions.Controls.AddRange(new Control[] { _makeMain, _makeBackup, _unlabel });   // the highlighted row shows what is selected; no sentence repeats it
+        // one row on top of all three lists: the sort buttons on the left, the list mode on the right, both as tall as a button
+        var strip = new Panel { Dock = DockStyle.Fill, BackColor = Ui.Bg, Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };
+        actions.Margin = Padding.Empty; _mode.Margin = Padding.Empty; _mode.Dock = DockStyle.Right; _mode.Height = Ui.BtnH;
+        strip.Controls.Add(actions); strip.Controls.Add(_mode);      // the Fill control first, then the one docked to the right edge
 
         // adapters: only matter when the groups cannot decide, so they stay folded behind a switch
         _adapterCard.SetHint("The groups above decide which adapter is main: the one on a main network. These choices are used only when they can't (for example no main network is connected).");
@@ -107,13 +108,13 @@ sealed class ConnectionsPanel : Panel
         var grid = _grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Ui.Bg };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         int Row(float h, SizeType st = SizeType.Absolute) { grid.RowStyles.Add(new RowStyle(st, h)); return grid.RowStyles.Count - 1; }
-        int r = Row(36 + Ui.Gap); grid.Controls.Add(actions, 0, r); grid.SetColumnSpan(actions, 2);     // on top of all the lists: the buttons sort networks in Main, Backup and Unlabelled alike
+        int r = Row(36 + Ui.Gap); grid.Controls.Add(strip, 0, r); grid.SetColumnSpan(strip, 2);     // on top of all the lists: the buttons sort networks in Main, Backup and Unlabelled alike
         r = Row(56, SizeType.Percent); grid.Controls.Add(_mainCard, 0, r); grid.Controls.Add(_backupCard, 1, r);
         _lowerRow = Row(44, SizeType.Percent); grid.Controls.Add(_noneCard, 0, _lowerRow); grid.Controls.Add(_barredCard, 1, _lowerRow);
         _adapterRow = Row(AdapterRowHeight(false)); grid.Controls.Add(_adapterCard, 0, _adapterRow); grid.SetColumnSpan(_adapterCard, 2);
         grid.RowCount = grid.RowStyles.Count;
 
-        Controls.Add(grid); Controls.Add(modeRow); Controls.Add(_header);       // docked last to first: header on top, then the mode row, the grid fills the rest
+        Controls.Add(grid); Controls.Add(_header);       // docked last to first: the header on top, the grid fills the rest
 
         _main.SelectedIndexChanged += (_, _) => { if (!_loading) MarkDirty(); Validate_(); };
         _backup.SelectedIndexChanged += (_, _) => { if (!_loading) MarkDirty(); Validate_(); };

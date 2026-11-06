@@ -113,7 +113,7 @@ sealed class AdapterCard : Card
                 int x = i * (col + 12);
                 string label = i == 0 ? "Status" : i == 1 ? "Latency" : "Uptime";
                 string value = i == 0 ? _o._status : i == 1 ? _o._latency : _o._uptime;
-                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._inUse ? _o._statusInk : Ui.Muted) : text;      // red on teal fails contrast: on a fill it is OnAccent; a standby card stays muted even when it is Down
+                Color ink = i == 0 ? (filled ? Ui.OnAccent : _o._inUse ? _o._statusInk : Ui.Muted) : (_o._inUse ? text : muted);      // a standby card: status, latency and uptime are all muted      // red on teal fails contrast: on a fill it is OnAccent; a standby card stays muted even when it is Down
                 TextRenderer.DrawText(g, label, Ui.UiFont(8.25f), new Rectangle(x, sy, col, 16), muted, Line);
                 TextRenderer.DrawText(g, value, Ui.UiFont(11.25f, Weight.Bold), new Rectangle(x, sy + 16, col, 24), ink, Line);
             }

@@ -106,7 +106,7 @@ sealed partial class MainForm : Form
         _tabs.AddPage("settings", "Settings", Ui.Settings, SettingsPage());
         Controls.Add(_tabs);
 
-        _statusHandler = s => OnUi(() => { Apply(s); UpdateRail(s); });
+        _statusHandler = s => OnUi(() => Apply(s));
         _engine.Status += _statusHandler;
         _adaptersHandler = () => OnUi(OnAdaptersChanged);
         _engine.AdaptersChanged += _adaptersHandler;
@@ -123,18 +123,6 @@ sealed partial class MainForm : Form
     }
 
     void OnUi(Action a) { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
-
-    /// <summary>The status box at the bottom of the nav rail: is the engine running, paused or only simulating.</summary>
-    EngineStatus? _lastStatus;
-    void UpdateRail(EngineStatus s)
-    {
-        _lastStatus = s;
-        if (!Visible) return;          // nothing on screen to update while the window is hidden; OnVisibleChanged catches up
-        string detail = _engine.Live ? "" : "Dry-run";
-        if (s.Paused) _tabs.SetStatus("Engine paused", Ui.Amber, detail);
-        else if (!_engine.Live) _tabs.SetStatus("Engine simulating", Ui.Blue, detail);
-        else _tabs.SetStatus("Engine running", Ui.Green, detail);
-    }
 
     /// <summary>Stops listening to the engine, so this window can be discarded (used when the theme changes).</summary>
     protected override void Dispose(bool disposing) { if (disposing) Application.RemoveMessageFilter(_wheel); base.Dispose(disposing); }
@@ -252,7 +240,6 @@ sealed partial class MainForm : Form
 
     public void CloseForReal() { _reallyClose = true; Detach(); Close(); }
 
-    protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); if (Visible && _lastStatus is { } s) UpdateRail(s); }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {

@@ -100,6 +100,44 @@ static class UiSelfTest
                 bmp.Save(Path.ChangeExtension(outFile, ".rules.png"));
                 Say("rules editor rendered");
             }
+            // 3) the Networks page: choose adapters yourself, Save, and check what reached the settings file and the engine
+            //    (a temporary settings file: the real one is never touched)
+            {
+                var tmp = Path.Combine(Path.GetTempPath(), "nas-uitest-adapters-" + Environment.ProcessId + ".json");
+                File.Delete(tmp);
+                var eng = new SwitchEngine("", "", Paths.DefaultPolicy, enforce: true, execute: false, intervalSec: 1, settingsFile: tmp);
+                using var host3 = new Form { StartPosition = FormStartPosition.Manual, Location = new System.Drawing.Point(-32000, -32000), Opacity = 0, Width = 1000, Height = 900 };
+                var panel = new ConnectionsPanel(eng) { Dock = DockStyle.Fill };
+                host3.Controls.Add(panel); host3.Show(); Application.DoEvents();
+                T F<T>(string name) => (T)typeof(ConnectionsPanel).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(panel)!;
+                static string NameOf(ComboBox c) => (string?)c.SelectedItem?.GetType().GetProperty("Name")?.GetValue(c.SelectedItem) ?? "";      // the page's item type is private
+                var cMain = F<ComboBox>("_main"); var cBack = F<ComboBox>("_backup"); var choose = F<CheckBox>("_chooseAdapters");
+                var names = cMain.Items.Cast<object>().Select(o => o.ToString()!).ToList();
+                Say($"adapters offered: {string.Join(" | ", names)}");
+                if (cMain.Items.Count >= 3)
+                {
+                    choose.Checked = true; Application.DoEvents();
+                    cMain.SelectedIndex = 1; cBack.SelectedIndex = 2; Application.DoEvents();
+                    string wantMain = NameOf(cMain), wantBack = NameOf(cBack);
+                    typeof(ConnectionsPanel).GetMethod("Save", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(panel, null);
+                    var sw3 = System.Diagnostics.Stopwatch.StartNew(); while (sw3.ElapsedMilliseconds < 2500) { Application.DoEvents(); Thread.Sleep(20); }
+                    var saved = AppSettings.Load(tmp);
+                    Say($"chose main '{wantMain}', backup '{wantBack}' -> file has '{saved.PrimaryAdapter}' / '{saved.BackupAdapter}', engine has '{eng.UserPrimary}' / '{eng.UserBackup}'");
+                    if (saved.PrimaryAdapter != wantMain || saved.BackupAdapter != wantBack || eng.UserPrimary != wantMain || eng.UserBackup != wantBack) throw new Exception("adapter choice did not reach the settings / engine");
+                    // showing the page again must show what was saved (the page reloads itself when it becomes visible and has nothing unsaved)
+                    panel.Reload(); Application.DoEvents();
+                    if (NameOf(cMain) != wantMain || NameOf(cBack) != wantBack || !choose.Checked) throw new Exception("after a reload the page does not show the saved adapters");
+                    Say("reload shows the saved adapters, the switch is on");
+                    // back to automatic: switch it off and save
+                    choose.Checked = false; Application.DoEvents();
+                    typeof(ConnectionsPanel).GetMethod("Save", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(panel, null);
+                    sw3.Restart(); while (sw3.ElapsedMilliseconds < 2500) { Application.DoEvents(); Thread.Sleep(20); }
+                    saved = AppSettings.Load(tmp);
+                    Say($"automatic -> file has '{saved.PrimaryAdapter}' / '{saved.BackupAdapter}'");
+                    if (saved.PrimaryAdapter != "" || saved.BackupAdapter != "") throw new Exception("switching back to automatic did not clear the saved adapters");
+                }
+                File.Delete(tmp);
+            }
             Say("RESULT: no exception");
         }
         catch (Exception e) { Say("RESULT: EXCEPTION\r\n" + e); }

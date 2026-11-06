@@ -503,8 +503,7 @@ sealed class Banner : KitControl
     }
 }
 
-/// <summary>The window's frame in the redesign: the left nav rail (logo, name, version, one item per page, the engine status box at the
-/// bottom) and the page area. Same API as the old tab strip (AddPage, Select, SelectedKey, Changed).</summary>
+/// <summary>The window's frame in the redesign: the left nav rail (logo, name, version, one item per page) and the page area. Same API as the old tab strip (AddPage, Select, SelectedKey, Changed).</summary>
 sealed class NavShell : Panel
 {
     public const int RailWidth = 216;
@@ -541,8 +540,6 @@ sealed class NavShell : Panel
 
     static bool Contains<T>(Control c) where T : Control { foreach (Control k in c.Controls) if (k is T || Contains<T>(k)) return true; return false; }
 
-    /// <summary>The box at the bottom of the rail: a coloured dot, a short state ("Engine running") and one muted line under it.</summary>
-    public void SetStatus(string state, Color dot, string detail) => _rail.SetStatus(state, dot, detail);
 
     // opening a page shows a skeleton shaped like a page for a moment, while the page lays itself out behind it
     readonly PageSkeleton _skeleton = new() { Dock = DockStyle.Fill, Visible = false };
@@ -611,17 +608,14 @@ sealed class NavShell : Panel
     {
         readonly NavShell _owner;
         readonly List<(string Key, string Text, string Glyph)> _items = new();
-        string _state = "Starting", _detail = ""; Color _dot = Ui.Muted;
         int _hover = -1, _focus = 0;
         Bitmap? _logo;
         const int ItemH = 40, ItemGap = 6, Top0 = 20 + 32 + 18;
 
         public NavRail(NavShell owner) { _owner = owner; BackColor = Ui.CardBg; TabStop = true; AccessibleRole = AccessibleRole.PageTabList; AccessibleName = "Pages"; }
         public void Add(string key, string text, string glyph) { _items.Add((key, text, glyph)); Invalidate(); }
-        public void SetStatus(string state, Color dot, string detail) { if (state == _state && dot == _dot && detail == _detail) return; _state = state; _dot = dot; _detail = detail; Invalidate(StatusRect()); }
 
         Rectangle ItemRect(int i) => new(14, Top0 + i * (ItemH + ItemGap), Width - 28, ItemH);
-        Rectangle StatusRect() => new(14, Height - 20 - 78, Width - 28, 78);
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -647,15 +641,6 @@ sealed class NavShell : Panel
                 if (Focused && ShowFocusCues && i == _focus) using (var p = Ui.RoundRect(new RectangleF(r.X + 1.5f, r.Y + 1.5f, r.Width - 3, r.Height - 3), 7)) g.DrawPath(Ui.Pen(Ui.Blue, 1.5f), p);
             }
 
-            // engine status box
-            var s = StatusRect();
-            if (s.Top > ItemRect(_items.Count).Top)
-            {
-                using (var p = Ui.RoundRect(new RectangleF(s.X + 0.5f, s.Y + 0.5f, s.Width - 1, s.Height - 1), 10)) { g.FillPath(Ui.Brush(Ui.Bg), p); g.DrawPath(Ui.Pen(Ui.Border), p); }
-                g.FillEllipse(Ui.Brush(_dot), s.X + 12, s.Y + 16, 8, 8);
-                TextRenderer.DrawText(g, _state, Ui.UiFont(9f, Weight.SemiBold), new Rectangle(s.X + 28, s.Y + 10, s.Width - 36, 20), Ui.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-                TextRenderer.DrawText(g, _detail, Ui.UiFont(8.6f), new Rectangle(s.X + 12, s.Y + 34, s.Width - 20, s.Height - 40), Ui.Muted, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            }
         }
 
         // the largest bold size at which the app name fits the rail, worked out once (the rail width is fixed)
