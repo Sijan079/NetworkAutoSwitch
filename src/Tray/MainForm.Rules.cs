@@ -20,7 +20,7 @@ sealed partial class MainForm
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, GlobalTriggerCard.PreferredHeight + Ui.Gap)); // global trigger
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));                                        // rule list + editor
 
-        var header = new PageHeader("Backup Rules", "Programs that must not download while you are on the backup.") { Dock = DockStyle.Fill, Margin = new Padding(0, 0, Ui.Gap, 0) };
+        var header = new PageHeader("Backup Rules") { Dock = DockStyle.Fill, Margin = new Padding(0, 0, Ui.Gap, 0) };
         header.AddAction(Ui.Btn("", "Programs Seen On Backup", "Pick from the programs that used data on the backup (or anything running now) and make a rule for them.", _editor.PickAndAdd));
 
         // the editor reads the global trigger, so they share this page (a control has one parent: Settings no longer shows it)

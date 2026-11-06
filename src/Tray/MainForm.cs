@@ -130,7 +130,7 @@ sealed partial class MainForm : Form
     {
         _lastStatus = s;
         if (!Visible) return;          // nothing on screen to update while the window is hidden; OnVisibleChanged catches up
-        string detail = _engine.Live ? "Admin rights active. Settings are restored on exit." : "Dry-run: nothing on this PC is changed.";
+        string detail = _engine.Live ? "" : "Dry-run";
         if (s.Paused) _tabs.SetStatus("Engine paused", Ui.Amber, detail);
         else if (!_engine.Live) _tabs.SetStatus("Engine simulating", Ui.Blue, detail);
         else _tabs.SetStatus("Engine running", Ui.Green, detail);

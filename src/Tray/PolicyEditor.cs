@@ -133,7 +133,7 @@ sealed class PolicyEditor : UserControl
         // own trigger: a toggle, and the rule's own numbers only while it is on
         var ownRow = new FlowLayoutPanel { WrapContents = false, BackColor = Ui.CardBg, Height = 36 };
         var ownLbl = new Label { Text = "Own Trigger", AutoSize = true, Font = Ui.UiFont(9.75f, Weight.SemiBold), ForeColor = Ui.Text, BackColor = Ui.CardBg, Margin = new Padding(0, 9, 14, 0), UseMnemonic = false };
-        var ownNote = new Label { Text = "Off = it uses the global trigger.", AutoSize = true, Font = Ui.UiFont(9f), ForeColor = Ui.Muted, BackColor = Ui.CardBg, Margin = new Padding(0, 10, 0, 0), UseMnemonic = false };
+        var ownNote = new Label { Text = "", Visible = false, AutoSize = true, Font = Ui.UiFont(9f), ForeColor = Ui.Muted, BackColor = Ui.CardBg, Margin = new Padding(0, 10, 0, 0), UseMnemonic = false };
         _own.Margin = new Padding(0, 7, 10, 0); _own.AccessibleName = "Own trigger";
         ownRow.Controls.AddRange(new Control[] { _own, ownLbl, ownNote });
         Ui.Tip.SetToolTip(_own, "On = this rule gets its own MB and seconds.\nOff = it uses the global trigger above.");
@@ -248,7 +248,8 @@ sealed class PolicyEditor : UserControl
             if (part == _ownFields) show &= _own.Checked;      // the rule's own numbers only while it has its own trigger
             part.Parent!.Visible = show;
         }
-        _explain.Text = Actions[Math.Clamp(_action.SelectedIndex, 0, Actions.Length - 1)].Explain;
+        var explain = Actions[Math.Clamp(_action.SelectedIndex, 0, Actions.Length - 1)].Explain;
+        _explain.Visible = false; Ui.Tip.SetToolTip(_action, explain);   // shown on hover: the segmented choice is enough on screen
         ResumeLayout(true);
         UpdateRate();
         _list.Invalidate();       // the details line follows the trigger and the action

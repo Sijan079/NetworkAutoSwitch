@@ -41,5 +41,5 @@ sealed class GlobalTriggerCard : Card
         _quiet = false; UpdateRate();
     }
 
-    void UpdateRate() => _note.Text = $"Rules without their own numbers use this.  ≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
+    void UpdateRate() => _note.Text = $"≈ {(double)_mb.Value * 8 / (double)_win.Value:0.0} Mbit/s";
 }

@@ -413,7 +413,7 @@ sealed class NavShell : Panel
             // logo + name + version
             _logo ??= Logo.Draw(32);
             g.DrawImage(_logo, 20, 20, 32, 32);
-            TextRenderer.DrawText(g, "NetworkAutoSwitch", Ui.UiFont(9.25f, Weight.Bold), new Rectangle(60, 18, Width - 62, 20), Ui.Text, TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, "NetworkAutoSwitch", NameFont(g), new Rectangle(60, 18, Width - 62, 20), Ui.Text, TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             TextRenderer.DrawText(g, "v" + AppInfo.Version, Ui.UiFont(8.25f), new Rectangle(62, 37, Width - 70, 16), Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
             for (int i = 0; i < _items.Count; i++)
@@ -438,6 +438,16 @@ sealed class NavShell : Panel
                 TextRenderer.DrawText(g, _state, Ui.UiFont(9f, Weight.SemiBold), new Rectangle(s.X + 28, s.Y + 10, s.Width - 36, 20), Ui.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 TextRenderer.DrawText(g, _detail, Ui.UiFont(8.6f), new Rectangle(s.X + 12, s.Y + 34, s.Width - 20, s.Height - 40), Ui.Muted, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             }
+        }
+
+        // the largest bold size at which the app name fits the rail, worked out once (the rail width is fixed)
+        Font? _nameFont;
+        Font NameFont(Graphics g)
+        {
+            if (_nameFont is not null) return _nameFont;
+            float pt = 10.5f;
+            while (pt > 7.5f && TextRenderer.MeasureText(g, "NetworkAutoSwitch", Ui.UiFont(pt, Weight.Bold), Size.Empty, TextFormatFlags.NoPadding).Width > Width - 66) pt -= 0.25f;
+            return _nameFont = Ui.UiFont(pt, Weight.Bold);
         }
 
         int Hit(Point p) { for (int i = 0; i < _items.Count; i++) if (ItemRect(i).Contains(p)) return i; return -1; }

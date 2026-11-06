@@ -26,7 +26,7 @@ sealed class CapMeter : Control
         var level = DataBudget.LevelFor(bytes, capMb * 1_000_000L);
         Color bar = level == BudgetLevel.Reached ? Ui.Red : level == BudgetLevel.Warning ? Ui.Amber : Ui.Green;
         float frac = capMb > 0 ? (float)Math.Clamp(bytes / (capMb * 1e6), 0, 1) : 0;
-        string note = capMb > 0 ? $"Warning at {DataBudget.WarnAt * 100:0} %. Limit set in Settings." : "Set a daily limit in Settings.";
+        string note = "";   // the 80 % warning and where the cap is set are in the card tooltip
         if (big == _big && unit == _unit && bar == _bar && Math.Abs(frac - _frac) < 0.002f && note == _note && session == _session && last == _last) return;
         _big = big; _unit = unit; _bar = bar; _frac = frac; _note = note; _session = session; _last = last;
         Invalidate();

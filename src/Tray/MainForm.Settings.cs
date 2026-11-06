@@ -19,7 +19,7 @@ sealed partial class MainForm
     // the Settings page's own controls. The old _startup / _mute check boxes (MainForm.cs) are kept in step with these toggles.
     Toggle? _startupToggle;
     Label? _startupDetail;
-    const string StartupDetailText = "Runs elevated 30 seconds after you sign in";
+    const string StartupDetailText = "";      // the row stays one line; a failure to change it still shows here in red
     Button? _openReleaseBtn;
     bool _releaseShown;                 // "Visible" reads false while the page is hidden, so the wanted state is kept here for the layout
     string _releaseUrl = UpdateCheck.ReleasesPage;
@@ -50,7 +50,7 @@ sealed partial class MainForm
     Control SettingsPage()
     {
         var page = new Panel { BackColor = Ui.Bg, Padding = new Padding(28, 0, 28, 0) };
-        var header = new PageHeader("Settings", "Changes apply right away.");
+        var header = new PageHeader("Settings");
         var scroll = new ScrollSurface();         // no scrollbar, the wheel scrolls it (a small window can still reach every card)
         var content = scroll.Content;
 
@@ -86,7 +86,7 @@ sealed partial class MainForm
         var fRecover = new Field(Ui.T("Switch back after"), Bare(_recover), "seconds");
         var fCheck = new Field(Ui.T("Check idle backup every"), Bare(_backupCheck), "seconds");
         var fCap = new Field(Ui.T("Daily data cap"), Bare(_cap), "MB");
-        var note = Lbl("Longer return time stops a flickering Wi-Fi from bouncing you around. 0 MB means no cap.", 9f, Weight.Regular, Ui.Muted);
+        var note = Lbl("", 9f, Weight.Regular, Ui.Muted); note.Visible = false;   // the field tooltips explain the numbers
         note.AutoEllipsis = false; note.TextAlign = ContentAlignment.TopLeft;
         switching.Body.Controls.AddRange(new Control[] { fRecover, fCheck, fCap, note });
 
@@ -127,9 +127,9 @@ sealed partial class MainForm
         }
         Row("Start at sign-in", StartupDetailText, startT, "Starts the app by itself 30 seconds after you sign in, already running as administrator (no prompt). The delay gives Wi-Fi time to connect, so a slow sign-in is not mistaken for an outage.\nIt is the same setting as the installer's Start when I sign in option.");
         _startupDetail = rows[^1].Detail;
-        Row("Mute notifications", "Warnings about your main connection ignore this", muteT, "Hides the tray pop-ups (switching, blocked programs, errors).\nEverything is still written to the Log, and the Dashboard shows the current state.");
-        Row("Check for updates", "Never installs without your click", updT, "Looks for a newer release on GitHub when the app starts and once a day. Only GitHub's public release information is read; nothing about you is sent.");
-        Row("Log lines", "Lines the Log page keeps on screen", fLog, "How many lines the Log page keeps on screen. When it is full, the oldest lines drop off the bottom, so the newest are always there. The log file itself is not shortened (it starts a fresh file at 1 MB and keeps the previous one as log.txt.old).");
+        Row("Mute notifications", "", muteT, "Hides the tray pop-ups (switching, blocked programs, errors).\nEverything is still written to the Log, and the Dashboard shows the current state.");
+        Row("Check for updates", "", updT, "Looks for a newer release on GitHub when the app starts and once a day. Only GitHub's public release information is read; nothing about you is sent.");
+        Row("Log lines", "", fLog, "How many lines the Log page keeps on screen. When it is full, the oldest lines drop off the bottom, so the newest are always there. The log file itself is not shortened (it starts a fresh file at 1 MB and keeps the previous one as log.txt.old).");
         var dividers = new List<int>();
         app.Body.Paint += (_, e) => { foreach (int y in dividers) e.Graphics.DrawLine(Ui.Pen(Ui.Border), 14, y, app.Body.Width - 15, y); };
 
@@ -138,7 +138,7 @@ sealed partial class MainForm
         upd.SetHint("A new version is never installed without your click on Install Update: the installer is checked against the release's SHA-256 file, closes the app the normal way (your network settings are put back) and starts the new version.");
         var updStatus = _updStatus = Lbl("Version " + AppInfo.Version, 11.25f, Weight.Bold, Ui.Text);
         updStatus.AutoEllipsis = false; updStatus.TextAlign = ContentAlignment.TopLeft;
-        var updDetail = Lbl("Click Check Now to ask GitHub for a newer version.", 9f, Weight.Regular, Ui.Muted);
+        var updDetail = Lbl("", 9f, Weight.Regular, Ui.Muted);
         updStatus.TextChanged += (_, _) => { Ui.Tip.SetToolTip(updStatus, updStatus.Text); _settingsRelayout?.Invoke(); };
         _openReleaseBtn = Ui.Btn(Ui.OpenFile, "Release Page", "Open the release page in your browser.", () => { try { Process.Start(new ProcessStartInfo(_releaseUrl) { UseShellExecute = true }); } catch { } });
         _openReleaseBtn.Visible = false;
@@ -197,9 +197,9 @@ sealed partial class MainForm
                 // Switching
                 col = (inner - 28) / 3;
                 fRecover.SetBounds(X0, 2, col, 58); fCheck.SetBounds(X0 + col + 14, 2, col, 58); fCap.SetBounds(X0 + 2 * (col + 14), 2, inner - 2 * (col + 14), 58);
-                int nh = TextRenderer.MeasureText(note.Text, note.Font, new Size(inner, 0), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height;
+                int nh = note.Text.Length == 0 ? -12 : TextRenderer.MeasureText(note.Text, note.Font, new Size(inner, 0), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height;
                 note.SetBounds(X0, 2 + 58 + 10, inner, nh + 2);
-                h = Head + note.Bottom + 14 + Edge;
+                h = Head + (note.Visible ? note.Bottom : 2 + 58) + 14 + Edge;
                 switching.SetBounds(0, y, W, h); y += h + G;
 
                 // App | Updates
@@ -214,7 +214,8 @@ sealed partial class MainForm
                     const int RowH = 64;
                     dividers.Add(ry);
                     int tw = Math.Max(10, ai - ctl.Width - 16);
-                    t.SetBounds(X0, ry + 12, tw, 20); d.SetBounds(X0, ry + 33, tw, 18);
+                    if (d.Text.Length == 0) t.SetBounds(X0, ry + (RowH - 24) / 2, tw, 24); else t.SetBounds(X0, ry + 12, tw, 22);   // a row without a detail line centres its title
+                    d.Visible = d.Text.Length > 0; d.SetBounds(X0, ry + 34, tw, 18);   // hidden when empty, so it never covers the title
                     ctl.Location = new Point(X0 + ai - ctl.Width, ry + (RowH - ctl.Height) / 2);
                     ry += RowH;
                 }

@@ -156,7 +156,7 @@ sealed partial class MainForm
     {
         // the mockup's page: 28 px sides, the header (title, subtitle, actions) on top, the cards below it with 16 px between them
         var page = new Panel { BackColor = Ui.Bg, Padding = new Padding(28, 0, 28, 24) };
-        var header = new PageHeader("Programs", "What uses the network, and what the watchdog stopped.");
+        var header = new PageHeader("Programs");
         header.AddAction(Ui.Btn(Ui.Shield, "Backup Rules", "Open the rules that decide which programs are watched or blocked on the backup.", () => ShowWindow("policy")));
 
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0), Padding = new Padding(0, 6, 0, 0) };
@@ -185,7 +185,6 @@ sealed partial class MainForm
         // the actions live in the card's header, right of the title (the first one added is the rightmost)
         card.AddHeaderAction(Ui.Refresh, "Reset", "Reset the counters.", () => { _engine.Usage.Reset(); RefreshUsage(); });
         card.AddHeaderAction(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary);
-        card.AddHeaderControl(ProgramsNote("Today, per program"));
 
         ProgramsTable.Prepare(_usage);
         _usage.ShowItemToolTips = true; _usage.MultiSelect = true;
@@ -221,7 +220,6 @@ sealed partial class MainForm
     {
         _blockedCard.SetIcon("");
         _blockedCard.SetHint("Programs the watchdog stopped because they downloaded too fast on a protected connection (State: Blocked). Blocks never expire by themselves: you decide.\nPrograms you allowed stay here with a countdown (State: Allowed): the watchdog leaves them alone until it ends.\nAllow, Block Now and Watch act on the selected rows; the button in a row acts on that row only.");
-        _blockedCard.AddHeaderControl(ProgramsNote("Blocks never expire on their own"));
 
         ProgramsTable.Prepare(_blockedList);
         _blockedList.ShowItemToolTips = true;

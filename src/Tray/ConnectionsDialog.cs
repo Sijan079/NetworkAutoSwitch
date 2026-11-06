@@ -17,7 +17,7 @@ sealed class ConnectionsPanel : Panel
 
     readonly SwitchEngine _engine;
     readonly Action? _saved;
-    readonly PageHeader _header = new("Networks", "Which networks are your main connection and which are the backup.");
+    readonly PageHeader _header = new("Networks");
     readonly Segmented _mode = new("Blacklist", "Whitelist");
     readonly Label _modeHint = new() { AutoSize = true, ForeColor = Ui.Muted, BackColor = Ui.Bg, Font = Ui.UiFont(9f), Margin = new Padding(0, 12, 0, 0), UseMnemonic = false };
     readonly Card _mainCard = new(Ui.Home, "Main Networks"), _backupCard = new(Ui.Phone, "Backup Networks"), _noneCard = new(Ui.List, "Unlabelled"), _barredCard = new(Ui.Block, "Barred");
@@ -178,7 +178,7 @@ sealed class ConnectionsPanel : Panel
         _modeHint.Text = _modeNow == ListMode.Blacklist
             ? "Blacklist: saved as the role a network may not have. Unsorted networks are treated as backup."
             : "Whitelist: saved as the roles a network may have. Unsorted networks are treated as backup.";
-        Ui.Tip.SetToolTip(_modeHint, Ui.Tip.GetToolTip(_mode));
+        _modeHint.Visible = false;   // the mode control's tooltip explains both modes; nothing extra on screen
 
         var rows = _known.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Select(n => (Name: n, Role: RoleOf(n))).ToList();
         NetworksList.Row Show(string n, bool either) => new(n, _where.TryGetValue(n, out var w) ? w : "", either);
@@ -211,7 +211,7 @@ sealed class ConnectionsPanel : Panel
         foreach (var l in Lists) l.Selected = _selected;
         if (_selected is null)
         {
-            _selName.Text = ""; _selRole.Text = "Select a network to sort it.";
+            _selName.Text = ""; _selRole.Text = "";
             _makeMain.Enabled = _makeBackup.Enabled = _unlabel.Enabled = false;
             return;
         }

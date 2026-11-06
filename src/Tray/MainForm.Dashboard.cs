@@ -117,7 +117,6 @@ sealed partial class MainForm
             "Nothing measured yet today.") { Dock = DockStyle.Fill };
         var actCard = new Card("", "Network Activity") { Margin = Gutter };
         actCard.SetHint("What each program downloaded and uploaded today, and which connection it was seen on. Sort it and add programs to the watch list on the Programs page.");
-        actCard.AddHeaderControl(HeaderNote("Today, Per Program"));
         actCard.Body.Padding = new Padding(14, 0, 14, 8); actCard.Body.Controls.Add(_actTable);
 
         _dogTable = new DashTable(new[] { new DashColumn("PROGRAM", 0), new DashColumn("STATE", 80), new DashColumn("TIME LEFT", 70, Right: true, Optional: true) },
@@ -125,9 +124,9 @@ sealed partial class MainForm
         _dogTable.ActionClicked += WatchdogAction;
         var dogCard = new Card("", "Watchdog") { Margin = Gutter };
         dogCard.SetHint("Blocked = the watchdog stopped it for downloading too fast on a protected connection. Allowed = you let it through for a while (the countdown). Watching = on your watch list.\nBlocks never expire on their own: you decide. More actions are on the Programs page.");
-        var dogNote = HeaderNote("Blocks Never Expire on Their Own");
+        var dogNote = HeaderNote("");
         dogCard.AddHeaderControl(dogNote);
-        dogCard.Resize += (_, _) => dogNote.Visible = dogCard.Width >= 440;        // the title keeps its room in a narrow window
+        dogNote.Visible = false;
         dogCard.Body.Padding = new Padding(14, 0, 14, 8); dogCard.Body.Controls.Add(_dogTable);
         bottom.Controls.Add(actCard, 0, 0); bottom.Controls.Add(dogCard, 1, 0);
 
@@ -176,7 +175,7 @@ sealed partial class MainForm
         string t = m == ConnectionMode.Auto
             ? $"Switches after 3 failed checks. Returns after {_engine.RecoverSeconds} s of good checks."
             : "Locked: the app does not switch by itself.";
-        if (_modeHint.Text != t) { _modeHint.Text = t; Ui.Tip.SetToolTip(_modeHint, t); _modeHint.Parent?.PerformLayout(); }
+        Ui.Tip.SetToolTip(_modeSeg, t); _modeHint.Visible = false;   // the explanation lives in the tooltip; the bar shows the choice only
     }
 
     /// <summary>The least height the dashboard needs (a smaller window scrolls instead of squeezing the cards).</summary>
@@ -326,11 +325,11 @@ sealed partial class MainForm
         bool pIn = !s.Paused && anyOk && s.Active == Active.Primary, bIn = !s.Paused && anyOk && s.Active == Active.Backup;
         int? pAvg = st.AvgMs(true), bAvg = st.AvgMs(false);
         string pNote = _engine.MainProtected ? "Protected like a backup: firewall rules, watchdog and data counter active"
-            : pAvg is int pa ? $"Average {pa} ms over the last 60 checks" : "No answer in the last 60 checks";
+            : "";
         bool hasBackup = _engine.BackupName.Length > 0;
         string bNote = !hasBackup ? "Plug in a tether or a second Wi-Fi adapter"
-            : bIn ? (bAvg is int ba ? $"Average {ba} ms over the last 60 checks" : "No answer in the last 60 checks")
-            : $"Checked every {_engine.BackupCheckSeconds} s while idle, to save data";
+            : "";
+
         _cardP.Show(s.Primary, true, StatsTracker.UptimePct(st.ProbesPrimary, st.FailPrimary), pIn, s.Paused, pNote);
         _cardB.Show(s.Backup, hasBackup, StatsTracker.UptimePct(st.ProbesBackup, st.FailBackup), bIn, s.Paused, bNote);
 

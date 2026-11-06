@@ -25,7 +25,7 @@ sealed partial class MainForm
     {
         var page = new Panel { BackColor = Ui.Bg, Padding = new Padding(28, 0, 28, 20) };
 
-        var header = new PageHeader("Log", "Everything the engine changed, in order.");
+        var header = new PageHeader("Log");
         header.AddAction(Ui.Btn("", "Copy", "Copy the selected lines (or every line in view when none is selected). Ctrl+C works too.", CopyLog));
         header.AddAction(Ui.Btn("", "Open Log File", "Open the log file in Notepad (newest first).", OpenLogNewestFirst));
         header.AddAction(Ui.Btn("", "Clear View", "Clear this view. The file is kept.", ClearLogView));
@@ -59,7 +59,7 @@ sealed partial class MainForm
 
         // footer: how many lines are in view, where the file is, and when it rotates
         var foot = new Panel { Dock = DockStyle.Bottom, Height = 12 + 18, Padding = new Padding(2, 12, 2, 0), BackColor = Ui.Bg };
-        var rotate = new Label { Dock = DockStyle.Right, AutoSize = true, Text = "Rotates at 1 MB", UseMnemonic = false, TextAlign = ContentAlignment.MiddleRight };
+        var rotate = new Label { Dock = DockStyle.Right, AutoSize = true, Text = "", Visible = false, UseMnemonic = false, TextAlign = ContentAlignment.MiddleRight };
         Ui.Tip.SetToolTip(rotate, "At 1 MB the file is renamed to log.txt.old and a new one is started.");
         foreach (var l in new[] { _logCount, rotate }) { l.Font = Ui.UiFont(9f); l.ForeColor = Ui.Muted; l.BackColor = Ui.Bg; }
         foot.Controls.Add(_logCount); foot.Controls.Add(rotate);
@@ -112,7 +112,7 @@ sealed partial class MainForm
         UpdateLogCount();
     }
 
-    void UpdateLogCount() => _logCount.Text = $"Showing {_log.Items.Count:N0} of {_logAll.Count:N0} lines · {LogPath}";
+    void UpdateLogCount() => _logCount.Text = $"{_log.Items.Count:N0} of {_logAll.Count:N0} lines";
 
     void ClearLogView() { _logAll.Clear(); _log.Items.Clear(); UpdateLogCount(); }
 
