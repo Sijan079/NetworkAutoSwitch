@@ -462,10 +462,11 @@ class Card : Panel
     }
 
     /// <summary>A labeled action button in the header (for actions that deserve a visible name).</summary>
-    public void AddHeaderAction(string glyph, string text, string tip, Action click, BtnKind kind = BtnKind.Secondary)
+    public KitButton AddHeaderAction(string glyph, string text, string tip, Action click, BtnKind kind = BtnKind.Secondary)
     {
         var b = Ui.Btn(glyph, text, tip, click, kind); b.Height = 32; b.MinimumSize = new Size(0, 32); b.Margin = new Padding(6, 0, 0, 0); b.Padding = new Padding(10, 0, 12, 0);
         _right.Controls.Add(b);
+        return b;
     }
 
     Panel? _head; PictureBox? _hint;

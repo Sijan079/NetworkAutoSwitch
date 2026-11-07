@@ -175,9 +175,11 @@ sealed partial class MainForm
             if ((int)_backupCheck.Value != _engine.BackupCheckSeconds) _engine.SetBackupCheckSeconds((int)_backupCheck.Value);
             if (GbToCapMb(_cap.Value) != _engine.DailyCapMB) _engine.SetDailyCapMB(GbToCapMb(_cap.Value));
             SetLogLines((int)_logLines.Value);       // has its own "unchanged" check
+            if (_globalDirty) { _globalDirty = false; SaveGlobalTrigger(); }
         }
         apply.Tick += (_, _) => ApplyValues();
         void Kick(object? s, EventArgs e) { apply.Stop(); apply.Start(); }
+        _global.Changed += () => { _globalDirty = true; Kick(null, EventArgs.Empty); };
         _recover.ValueChanged += Kick; _backupCheck.ValueChanged += Kick; _cap.ValueChanged += Kick; _logLines.ValueChanged += Kick;
         page.Disposed += (_, _) => { if (apply.Enabled) ApplyValues(); apply.Dispose(); };    // a change made just before a theme switch is not lost
 
@@ -207,6 +209,10 @@ sealed partial class MainForm
                 note.SetBounds(X0, 2 + 58 + 10, inner, nh + 2);
                 h = Head + (note.Visible ? note.Bottom : 2 + 58) + 14 + Edge;
                 switching.SetBounds(0, y, W, h); y += h + G;
+
+                // Global Trigger
+                int gh = GlobalTriggerCard.PreferredHeight;
+                _global.SetBounds(0, y, W, gh); y += gh + G;
 
                 // App | Updates
                 bool side = W >= 760;
@@ -252,8 +258,8 @@ sealed partial class MainForm
             finally { arranging = false; }
         }
         _settingsRelayout = Arrange;
-        foreach (var c in new Control[] { conn, switching, app, upd }) c.Dock = DockStyle.None;   // a Card fills its parent by default; here Arrange() places each one
-        content.Controls.AddRange(new Control[] { conn, switching, app, upd });
+        foreach (var c in new Control[] { conn, switching, _global, app, upd }) c.Dock = DockStyle.None;   // a Card fills its parent by default; here Arrange() places each one
+        content.Controls.AddRange(new Control[] { conn, switching, _global, app, upd });
         content.Resize += (_, _) => Arrange();
         Arrange();
 

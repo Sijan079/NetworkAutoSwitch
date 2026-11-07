@@ -181,15 +181,18 @@ sealed partial class MainForm
         RefreshDashTables();       // RefreshBlocked ends here (every 2 s with RefreshUsage, and after an action): the quick views follow
     }
 
-    /// <summary>Each button works only on what it can act on: Unblock / Unblock All on blocked rows, Block Now / Watch Again on allowed rows.</summary>
+    /// <summary>One action button that follows the selection: Allow on blocked rows, Block Now on allowed rows; Watch works on allowed rows.</summary>
     void UpdateBlockedButtons()
     {
         if (_unblockBtn is null) return;
         var sel = _blockedList.SelectedItems.Cast<ListViewItem>().ToList();
-        bool anyBlocked = _blockedList.Items.Cast<ListViewItem>().Any(i => i.Name == "blocked");
-        _unblockBtn.Enabled = sel.Any(i => i.Name == "blocked");
-        _unblockAllBtn!.Enabled = anyBlocked;
-        _blockNowBtn!.Enabled = _watchAgainBtn!.Enabled = sel.Any(i => i.Name == "allowed");
+        bool anyBlocked = sel.Any(i => i.Name == "blocked"), anyAllowed = sel.Any(i => i.Name == "allowed");
+        var k = (KitButton)_unblockBtn;
+        if (anyAllowed && !anyBlocked) { k.Text = "Block Now"; k.Glyph = Ui.Lock; k.Kind = BtnKind.Danger; Ui.Tip.SetToolTip(k, "Block the selected allowed programs again right away."); }
+        else { k.Text = "Allow"; k.Glyph = Ui.Unlock; k.Kind = BtnKind.Primary; Ui.Tip.SetToolTip(k, "Unblock the selected blocked programs for the time on the left. The watchdog leaves them alone until it ends.\nBlocks never expire by themselves; you decide."); }
+        k.Enabled = anyBlocked || anyAllowed;
+        k.Invalidate();
+        _watchAgainBtn!.Visible = anyAllowed && !anyBlocked;      // the secondary action of an allowed row: nothing to watch on a blocked one
     }
 
     // ---------- quick views ----------
@@ -214,7 +217,7 @@ sealed partial class MainForm
         var dog = new List<DashRow>(); var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (ListViewItem it in _blockedList.Items)
         {
-            string path = it.SubItems[0].Text, name = Path.GetFileName(path), status = it.SubItems.Count > 2 ? it.SubItems[2].Text : "";
+            string path = it.SubItems[0].Text, name = Path.GetFileName(path), status = it.SubItems.Count > 3 ? it.SubItems[3].Text : "";
             listed.Add(name);
             if (it.Name == "blocked")
                 dog.Add(new DashRow(new[] { new DashCell(name), new DashCell("Blocked", Ui.Red), new DashCell("—") }, "Allow", (string)it.Tag!, $"{path}\n{status}. Allow lets it through for {AllowMinutes} minutes.", Danger: true, ActionTip: $"Allow For {AllowMinutes} Minutes"));      // red: it is blocked (the colour follows the state, like the red chip)

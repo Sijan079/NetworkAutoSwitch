@@ -12,10 +12,9 @@ namespace NetworkAutoSwitch.Tray;
 /// <summary>Shared painting for the Programs tables. Paint code calls these on every cell, so nothing here allocates GDI objects.</summary>
 static class ProgramsTable
 {
-    public const int RowHeight = 40, CellPad = 8, RowButtonH = 28;
+    public const int RowHeight = 40, CellPad = 8;
     public static Font CellFont => Ui.UiFont(9.75f);                    // 13 px, the mockup's row text
     public static Font HeaderFont => Ui.UiFont(8.25f, Weight.Bold);     // 11 px uppercase column titles
-    public static Font ButtonFont => Ui.UiFont(9f, Weight.SemiBold);
 
     /// <summary>Turns a ListView into a Programs table: details view, no native header (the TableHeader above it draws the titles,
     /// which also renders correctly in --snapshot pictures), taller rows, owner-drawn cells, double-buffered so the 2 s refresh never flickers.</summary>
@@ -39,11 +38,12 @@ static class ProgramsTable
     }
 
     /// <summary>The row background (selected, hovered or plain) and the divider line under it.</summary>
-    public static void Background(Graphics g, Rectangle r, bool selected, bool hover)
+    public static void Background(Graphics g, Rectangle r, bool selected, bool hover, bool columnLine = false)
     {
         var bg = selected ? Ui.SelectedRow : hover ? Ui.Mix(Ui.Raised, Ui.CardBg, 0.6f) : Ui.CardBg;
         g.FillRectangle(Ui.Brush(bg), r);
         g.DrawLine(Ui.Pen(Ui.Border), r.Left, r.Bottom - 1, r.Right, r.Bottom - 1);
+        if (columnLine) g.DrawLine(Ui.Pen(Ui.Border), r.Right - 1, r.Top, r.Right - 1, r.Bottom - 1);      // the right border of this column: shows where it ends (and where to drag)
     }
 
     /// <summary>The text area of a cell: CellPad on both sides. With the card body's 6 px padding, the first column's text lines up with the card title.</summary>
@@ -52,31 +52,6 @@ static class ProgramsTable
 
     public static void Text(Graphics g, string text, Rectangle area, Color color, bool right = false, Font? font = null, TextFormatFlags extra = TextFormatFlags.EndEllipsis) =>
         TextRenderer.DrawText(g, text, font ?? CellFont, area, color, TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | extra | (right ? TextFormatFlags.Right : TextFormatFlags.Left));
-
-    // ---- the small button inside a row (Allow 10 Min, Block Now) ----
-    static readonly Dictionary<string, int> _buttonWidths = new();
-    static readonly Dictionary<int, GraphicsPath> _buttonPaths = new();     // one rounded outline per width, moved into place with a transform
-
-    public static Rectangle RowButtonRect(Rectangle cell, string text)
-    {
-        if (!_buttonWidths.TryGetValue(text, out int w))
-            _buttonWidths[text] = w = TextRenderer.MeasureText(text, ButtonFont, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width + 24;
-        w = Math.Min(w, Math.Max(0, cell.Width - CellPad * 2));
-        return new Rectangle(cell.Left + CellPad, cell.Top + (cell.Height - 1 - RowButtonH) / 2, w, RowButtonH);
-    }
-
-    /// <summary>A secondary kit button (raised fill, line border, radius 8) painted inside a row; the list handles its clicks.</summary>
-    public static void RowButton(Graphics g, Rectangle b, string text, bool hover)
-    {
-        if (b.Width < 16) return;
-        if (!_buttonPaths.TryGetValue(b.Width, out var path)) _buttonPaths[b.Width] = path = Ui.RoundRect(new RectangleF(0.5f, 0.5f, b.Width - 1, b.Height - 1), 8);
-        var state = g.Save();
-        g.SmoothingMode = SmoothingMode.AntiAlias; g.TranslateTransform(b.X, b.Y);
-        g.FillPath(Ui.Brush(hover ? Ui.Mix(Ui.Text, Ui.Raised, 0.08f) : Ui.Raised), path);
-        g.DrawPath(Ui.Pen(Ui.Border), path);
-        g.Restore(state);
-        TextRenderer.DrawText(g, text, ButtonFont, b, Ui.Text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
-    }
 
     /// <summary>The row under the mouse, so it can be tinted. Repaints only the rows whose state changed.</summary>
     public static void TrackHover(ListView lv, Func<int> get, Action<int> set)
@@ -127,17 +102,17 @@ sealed class TableHeader : Control
         {
             int w = _lv.Columns[i].Width;
             var cell = new Rectangle(x, 0, w, Height - 1); x += w;
+            if (i < _titles.Length - 1) g.DrawLine(Ui.Pen(Ui.Border), x - 1, 0, x - 1, Height - 1);
             if (_titles[i].Length == 0) continue;
             int state = _sortState?.Invoke(i) ?? -1;
             bool right = _lv.Columns[i].TextAlign == HorizontalAlignment.Right, on = state > 0;
             var area = ProgramsTable.TextArea(cell, i);
-            if (on) { if (right) area.X += 14; area.Width = Math.Max(0, area.Width - 14); }       // room for the arrow
+            if (on) area.Width = Math.Max(0, area.Width - 14);       // room for the arrow at the right edge of the column
             var ink = on ? Ui.Text : Ui.Muted;
             ProgramsTable.Text(g, _titles[i], area, ink, right, ProgramsTable.HeaderFont);
             if (on)
             {
-                int tw = Math.Min(area.Width, TextRenderer.MeasureText(g, _titles[i], ProgramsTable.HeaderFont, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width);
-                float cx = right ? area.Right - tw - 9 : area.Left + tw + 9, cy = Height / 2f;
+                float cx = cell.Right - ProgramsTable.CellPad - 4, cy = Height / 2f;      // the sort arrow sits at the right side of the column
                 bool up = state == 1;
                 _arrow[0] = new PointF(cx - 3.5f, up ? cy + 2 : cy - 2); _arrow[1] = new PointF(cx + 3.5f, up ? cy + 2 : cy - 2); _arrow[2] = new PointF(cx, up ? cy - 2.5f : cy + 2.5f);
                 var old = g.SmoothingMode; g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -149,14 +124,40 @@ sealed class TableHeader : Control
     }
 
     int Hit(int px) { int x = 0; for (int i = 0; i < _lv.Columns.Count; i++) { x += _lv.Columns[i].Width; if (px < x) return i; } return -1; }
+
+    // Resizing: drag the line between two column titles. The column on the left grows by what the one on the right gives up (and the other way round),
+    // so the table keeps its width and never scrolls sideways.
+    const int Grip = 5, MinCol = 60;
+    int _drag = -1, _dragX, _wLeft, _wRight;
+    bool _dragged;
+    /// <summary>The column whose right edge is under the pointer (not the last one: its edge is the table's edge), or -1.</summary>
+    int EdgeAt(int px) { int x = 0; for (int i = 0; i < _lv.Columns.Count - 1; i++) { x += _lv.Columns[i].Width; if (Math.Abs(px - x) <= Grip) return i; } return -1; }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left && EdgeAt(e.X) is var c && c >= 0)
+        { _drag = c; _dragX = e.X; _wLeft = _lv.Columns[c].Width; _wRight = _lv.Columns[c + 1].Width; _dragged = false; Capture = true; }
+        base.OnMouseDown(e);
+    }
+    protected override void OnMouseUp(MouseEventArgs e) { _drag = -1; Capture = false; base.OnMouseUp(e); }
     protected override void OnMouseMove(MouseEventArgs e)
     {
+        if (_drag >= 0)
+        {
+            int d = Math.Clamp(e.X - _dragX, MinCol - _wLeft, _wRight - MinCol);
+            if (d != 0) _dragged = true;
+            _lv.BeginUpdate();
+            _lv.Columns[_drag].Width = _wLeft + d; _lv.Columns[_drag + 1].Width = _wRight - d;
+            _lv.EndUpdate(); _lv.Invalidate();
+            return;
+        }
         int c = Hit(e.X);
-        Cursor = _sortBy is not null && c >= 0 && (_sortState?.Invoke(c) ?? -1) >= 0 ? Cursors.Hand : Cursors.Default;
+        Cursor = EdgeAt(e.X) >= 0 ? Cursors.VSplit : _sortBy is not null && c >= 0 && (_sortState?.Invoke(c) ?? -1) >= 0 ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
     }
     protected override void OnMouseClick(MouseEventArgs e)
     {
+        if (_dragged || EdgeAt(e.X) >= 0) { _dragged = false; return; }       // a drag (or a click on a divider) is not a sort click
         int c = Hit(e.X);
         if (_sortBy is not null && c >= 0 && (_sortState?.Invoke(c) ?? -1) >= 0) { _sortBy(c); Invalidate(); }
         base.OnMouseClick(e);

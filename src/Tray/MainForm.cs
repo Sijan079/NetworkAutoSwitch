@@ -49,7 +49,7 @@ sealed partial class MainForm : Form
     readonly TableLayoutPanel _bottom = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
     readonly Label _blockedEmpty = new() { Dock = DockStyle.Fill, Text = "Nothing is blocked. Programs the watchdog stops show up here.", ForeColor = Ui.Muted, BackColor = Ui.CardBg, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0) };
     FlowLayoutPanel? _blockedSide;
-    Button? _unblockBtn, _unblockAllBtn, _blockNowBtn, _watchAgainBtn;
+    Button? _unblockBtn, _watchAgainBtn, _addWatchBtn;
     string _sortKey = "total"; bool _sortFlip;
     static readonly string[] UsageKeys = { "program", "total", "backup", "trigger", "watch" };      // the sort key of each Network Activity column, left to right
     ScrollSurface? _dashPage;
@@ -64,7 +64,8 @@ sealed partial class MainForm : Form
     int _maxLogRows = Math.Clamp(AppSettings.Load().LogLines, 100, 20000);      // lines kept on screen (Settings → Log)
     // policy and settings
     readonly List<Label> _policyStatus = new();
-    readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Policy page reads it
+    bool _globalDirty;
+    readonly GlobalTriggerCard _global = new() { Margin = new Padding(0, 0, Ui.Gap, Ui.Gap) };    // lives on the Settings page; the rules editor on the Backup Rules page reads it
     readonly PolicyEditor _editor;
     readonly NoWheelNumeric _recover = new() { Minimum = 3, Maximum = 600, Increment = 5, Width = 84 };
     readonly NoWheelNumeric _cap = new() { DecimalPlaces = 1, Minimum = 0, Maximum = 9999, Increment = 0.5m, Width = 96 }, _backupCheck = new() { Minimum = 1, Maximum = 60, Increment = 1, Width = 68 };

@@ -14,15 +14,14 @@ sealed partial class MainForm
 
     // Blocked table columns. Subitems 0-2 (path, rule, "Blocked 3 min" / "Allowed, watched in 9:42") are what the Dashboard's
     // 3-column copy shows, so they stay as they were; 3 (time) and 4 (the row button's cell) are appended for this page only.
-    const int BlockedColState = 2, BlockedColTime = 3, BlockedColAction = 4;
+    const int BlockedColLocation = 1, BlockedColState = 3, BlockedColTime = 4;
     const int UsageColWatch = 4;
     TableHeader? _usageHeader;
-    int _usageHover = -1, _blockedHover = -1, _blockedButtonHover = -1;
-    string _allowRowText = "Allow 10 Min";      // the row button of a blocked program: follows the grace dropdown
+    int _usageHover = -1, _blockedHover = -1;
 
-    void OverrideSelected(bool all)
+    void OverrideSelected()
     {
-        var names = (all ? _blockedList.Items.Cast<ListViewItem>() : _blockedList.SelectedItems.Cast<ListViewItem>()).Where(i => i.Name == "blocked").Select(i => (string)i.Tag!).ToList();
+        var names = _blockedList.SelectedItems.Cast<ListViewItem>().Where(i => i.Name == "blocked").Select(i => (string)i.Tag!).ToList();
         Allow(names);
     }
 
@@ -43,9 +42,10 @@ sealed partial class MainForm
     /// <summary>One row of the Blocked table. The file name and folder are split here (every 2 s), not in the paint code.</summary>
     static ListViewItem BlockedRow(string kind, string path, string rule, string status, string time, string tag, bool selected)
     {
-        var it = new ListViewItem(new[] { path, rule, status, time, "" }) { Name = kind, Tag = tag, Selected = selected, ToolTipText = path };
+        var it = new ListViewItem(new[] { path, "", rule, status, time }) { Name = kind, Tag = tag, Selected = selected, ToolTipText = path };
         string file = Path.GetFileName(path), dir = Path.GetDirectoryName(path) ?? "";
-        it.SubItems[0].Tag = new[] { file.Length > 0 ? file : path, file.Length > 0 ? dir : "" };
+        it.SubItems[0].Tag = file.Length > 0 ? file : path;
+        it.SubItems[BlockedColLocation].Text = file.Length > 0 ? dir : "";
         return it;
     }
 
@@ -183,7 +183,7 @@ sealed partial class MainForm
         card.SetHint("Total = what each program downloaded plus uploaded today, on the main connection and the backup (kept across restarts, starts again at midnight). Hover a row for the split. Click a column title to sort; click it again to reverse.\nOn Backup = how much of that went through your backup (your phone's data).\nTrigger = the most it downloaded in any 10 seconds today. It is measured the same way as your watch trigger (set in Settings): amber means it went above it, so a watched program like this is blocked on the backup. Set a rule's trigger between a program's quiet value and its download value.\nWatch List = the program is covered by a backup rule: the watchdog is watching it.");
         // the actions live in the card's header, right of the title (the first one added is the rightmost)
         card.AddHeaderAction(Ui.Refresh, "Reset", "Reset the counters.", () => { _engine.Usage.Reset(); RefreshUsage(); });
-        card.AddHeaderAction(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary);
+        _addWatchBtn = card.AddHeaderAction(Ui.Eye, "Add To Watch List", "Make the selected programs a watch rule (saved and applied at once).", AddWatchFromUsage, BtnKind.Primary);
 
         ProgramsTable.Prepare(_usage);
         _usage.ShowItemToolTips = true; _usage.MultiSelect = true;
@@ -193,6 +193,8 @@ sealed partial class MainForm
         _usage.DrawSubItem += (_, e) => DrawUsageCell(e);
         ProgramsTable.TrackHover(_usage, () => _usageHover, v => _usageHover = v);
         _usageHeader = new TableHeader(_usage, UsageSortState, SortByColumn);
+        _addWatchBtn.Enabled = false;                                   // like Save: dull until there is something to act on
+        _usage.SelectedIndexChanged += (_, _) => _addWatchBtn.Enabled = _usage.SelectedItems.Count > 0;
 
         // the table's left edge lines up with the card title; the 6 px leave room for the row tint around the text
         card.Body.Padding = new Padding(6, 0, 6, 10);
@@ -204,7 +206,7 @@ sealed partial class MainForm
     {
         if (e.Item is null || e.SubItem is null) return;
         var g = e.Graphics; var cell = ProgramsTable.Cell(_usage, e);
-        ProgramsTable.Background(g, cell, e.Item.Selected, e.ItemIndex == _usageHover);
+        ProgramsTable.Background(g, cell, e.Item.Selected, e.ItemIndex == _usageHover, e.ColumnIndex < _usage.Columns.Count - 1);
         var area = ProgramsTable.TextArea(cell, e.ColumnIndex);
         if (e.ColumnIndex == UsageColWatch)
         {
@@ -222,32 +224,26 @@ sealed partial class MainForm
 
         ProgramsTable.Prepare(_blockedList);
         _blockedList.ShowItemToolTips = true;
-        _blockedList.Columns.Add("Program", 260); _blockedList.Columns.Add("Rule", 116); _blockedList.Columns.Add("State", 96);
-        _blockedList.Columns.Add("Time", 96, HorizontalAlignment.Right); _blockedList.Columns.Add("", 140);
+        _blockedList.Columns.Add("Program", 200); _blockedList.Columns.Add("Location", 220); _blockedList.Columns.Add("Rule", 116); _blockedList.Columns.Add("State", 96);
+        _blockedList.Columns.Add("Time", 96);
         FitFirstColumn(_blockedList);
         _blockedList.DrawSubItem += (_, e) => DrawBlockedCell(e);
         ProgramsTable.TrackHover(_blockedList, () => _blockedHover, v => _blockedHover = v);
-        _blockedList.MouseMove += (_, e) => TrackRowButton(e.Location);
-        _blockedList.MouseLeave += (_, _) => TrackRowButton(new Point(-1, -1));
-        _blockedList.MouseClick += (_, e) => ClickRowButton(e.Location);
         _blockedList.SelectedIndexChanged += (_, _) => UpdateBlockedButtons();
         var header = new TableHeader(_blockedList);
 
-        // the action bar above the table: the grace time and the actions for blocked rows on the left, those for allowed rows on the right
+        // the action bar above the table: the grace time on the left; Watch (allowed rows only) and the one action button on the right
         foreach (var g in GraceLabels) _grace.Items.Add(g);
         _grace.SelectedIndex = 0;
         _grace.ItemHeight = 30; _grace.Width = 112; _grace.Margin = new Padding(0, 0, 8, 0);       // 36 px tall, like the buttons next to it
-        _grace.SelectedIndexChanged += (_, _) => { _allowRowText = "Allow " + GraceLabels[Math.Max(0, _grace.SelectedIndex)]; _blockedList.Invalidate(); };
         Ui.Tip.SetToolTip(_grace, "How long to leave a program alone after you allow it. Then the watchdog watches it again.");
-        _unblockBtn = Ui.Btn(Ui.Unlock, "Allow", "Unblock the selected blocked programs for the time on the left. The watchdog leaves them alone until it ends.\nBlocks never expire by themselves; you decide.", () => OverrideSelected(all: false), BtnKind.Primary);
-        _unblockAllBtn = Ui.Btn(Ui.Unlock, "Unblock All", "Unblock everything that is blocked, for the time on the left.", () => OverrideSelected(all: true));
-        _blockNowBtn = Ui.Btn(Ui.Lock, "Block Now", "Block the selected allowed programs again right away.", () => AllowedAction(block: true), BtnKind.Danger);
+        _unblockBtn = Ui.Btn(Ui.Unlock, "Allow", "", () => { if (_blockedList.SelectedItems.Cast<ListViewItem>().Any(i => i.Name == "allowed")) AllowedAction(block: true); else OverrideSelected(); }, BtnKind.Primary);   // one button: Allow on a blocked row, Block Now on an allowed one (see UpdateBlockedButtons)
         _watchAgainBtn = Ui.Btn(Ui.Eye, "Watch", "End the allowed time of the selected programs now. They are blocked only if they download too fast.", () => AllowedAction(block: false));
         var left = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0), Margin = new Padding(0) };
+        left.Controls.Add(_grace);
         var right = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, BackColor = Ui.CardBg, Padding = new Padding(0), Margin = new Padding(0) };
-        left.Controls.Add(_grace); left.Controls.Add(_unblockBtn); left.Controls.Add(_unblockAllBtn);
-        right.Controls.Add(_watchAgainBtn); right.Controls.Add(_blockNowBtn);
-        _unblockAllBtn.Margin = _blockNowBtn.Margin = new Padding(0); _unblockBtn.Margin = _watchAgainBtn.Margin = new Padding(0, 0, 8, 0);
+        right.Controls.Add(_watchAgainBtn); right.Controls.Add(_unblockBtn);       // far right: Watch (allowed rows only) beside the one action button
+        _watchAgainBtn.Margin = new Padding(0, 0, 8, 0); _unblockBtn.Margin = new Padding(0);
         var bar = new Panel { Dock = DockStyle.Top, Height = 36 + 12, BackColor = Ui.CardBg, Padding = new Padding(ProgramsTable.CellPad, 0, ProgramsTable.CellPad, 12) };   // above the table the buttons act on
         bar.Controls.Add(left); bar.Controls.Add(right);
         _blockedSide = left;
@@ -265,63 +261,28 @@ sealed partial class MainForm
     {
         if (e.Item is null || e.SubItem is null) return;
         var g = e.Graphics; var cell = ProgramsTable.Cell(_blockedList, e);
-        ProgramsTable.Background(g, cell, e.Item.Selected, e.ItemIndex == _blockedHover);
+        ProgramsTable.Background(g, cell, e.Item.Selected, e.ItemIndex == _blockedHover, e.ColumnIndex < _blockedList.Columns.Count - 1);
         var area = ProgramsTable.TextArea(cell, e.ColumnIndex);
         bool isBlocked = e.Item.Name == "blocked";
         int mid = cell.Top + (cell.Height - 1) / 2;
         switch (e.ColumnIndex)
         {
             case 0:
-                // the program's file name first (what you recognise), its folder after it in muted text, shortened in the middle
-                if (e.SubItem.Tag is string[] { Length: 2 } parts)
-                {
-                    int w = Math.Min(area.Width, TextRenderer.MeasureText(g, parts[0], ProgramsTable.CellFont, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width + 2);
-                    ProgramsTable.Text(g, parts[0], area with { Width = w }, Ui.Text);
-                    if (parts[1].Length > 0 && area.Width - w > 40)
-                        ProgramsTable.Text(g, parts[1], new Rectangle(area.Left + w + 8, area.Top, area.Width - w - 8, area.Height), Ui.Muted, extra: TextFormatFlags.PathEllipsis);
-                }
-                else ProgramsTable.Text(g, e.SubItem.Text, area, Ui.Text, extra: TextFormatFlags.PathEllipsis);
+                ProgramsTable.Text(g, e.SubItem.Tag as string ?? e.SubItem.Text, area, Ui.Text, extra: TextFormatFlags.PathEllipsis);       // the file name; the folder has its own column
+                break;
+            case BlockedColLocation:
+                ProgramsTable.Text(g, e.SubItem.Text, area, Ui.Muted, extra: TextFormatFlags.PathEllipsis);
                 break;
             case BlockedColState:
                 Chip.Paint(g, isBlocked ? "Blocked" : "Allowed", isBlocked ? Ui.Red : Ui.Blue, area.Left, mid);
                 break;
             case BlockedColTime:
-                ProgramsTable.Text(g, e.SubItem.Text, area, isBlocked ? Ui.Muted : Ui.Text, right: true);
-                break;
-            case BlockedColAction:
-                ProgramsTable.RowButton(g, ProgramsTable.RowButtonRect(cell, RowButtonText(e.Item)), RowButtonText(e.Item), e.ItemIndex == _blockedButtonHover);
+                ProgramsTable.Text(g, e.SubItem.Text, area, isBlocked ? Ui.Muted : Ui.Text);
                 break;
             default:
                 ProgramsTable.Text(g, e.SubItem.Text, area, Ui.Text);
                 break;
         }
-    }
-
-    string RowButtonText(ListViewItem it) => it.Name == "blocked" ? _allowRowText : "Block Now";
-
-    /// <summary>The row whose button is under the point, or -1.</summary>
-    int RowButtonAt(Point p)
-    {
-        var it = _blockedList.GetItemAt(p.X, p.Y);
-        if (it is null || it.SubItems.Count <= BlockedColAction) return -1;
-        return ProgramsTable.RowButtonRect(it.SubItems[BlockedColAction].Bounds, RowButtonText(it)).Contains(p) ? it.Index : -1;
-    }
-
-    void TrackRowButton(Point p)
-    {
-        int now = RowButtonAt(p); if (now == _blockedButtonHover) return;
-        int old = _blockedButtonHover; _blockedButtonHover = now;
-        _blockedList.Cursor = now >= 0 ? Cursors.Hand : Cursors.Default;
-        if (old >= 0 && old < _blockedList.Items.Count) _blockedList.Invalidate(_blockedList.Items[old].Bounds);
-        if (now >= 0) _blockedList.Invalidate(_blockedList.Items[now].Bounds);
-    }
-
-    /// <summary>The button inside a row acts on that row only: Allow for a blocked program, Block Now for an allowed one.</summary>
-    void ClickRowButton(Point p)
-    {
-        int i = RowButtonAt(p); if (i < 0) return;
-        var it = _blockedList.Items[i]; var names = new List<string> { (string)it.Tag! };
-        if (it.Name == "blocked") Allow(names); else BlockOrWatch(names, block: true);
     }
 
     /// <summary>The first column (the program) takes what the other columns leave, so the table never scrolls sideways.</summary>

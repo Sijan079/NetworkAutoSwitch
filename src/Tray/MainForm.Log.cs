@@ -13,7 +13,10 @@ sealed partial class MainForm
     readonly List<LogRow> _logAll = new();
     int _logFilter;
     string _logQuery = "";
-    Segmented _logKinds = null!;
+    readonly NoWheelComboBox _logKinds = new() { DropDownStyle = ComboBoxStyle.DropDownList, ItemHeight = 30, Width = 150 };
+    KitButton _copyBtn = null!;
+    readonly System.Windows.Forms.Timer _copiedTimer = new() { Interval = 3000 };       // "Copied" goes back to "Copy" after 3 s
+    const string CopyGlyph = "";
     readonly Label _logCount = new() { Dock = DockStyle.Fill, AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer _logSearchTimer = new() { Interval = 120 };    // typing fast re-filters once, after a short pause
     static readonly string LogPath = Paths.LogFile;       // the getter creates the folder every call: read it once
@@ -26,20 +29,23 @@ sealed partial class MainForm
         var page = new Panel { BackColor = Ui.Bg, Padding = new Padding(28, 0, 28, 20) };
 
         var header = new PageHeader("Log");
-        header.AddAction(Ui.Btn("", "Copy", "Copy the selected lines (or every line in view when none is selected). Ctrl+C works too.", CopyLog));
-        header.AddAction(Ui.Btn("", "Open Log File", "Open the log file in Notepad (newest first).", OpenLogNewestFirst));
-        header.AddAction(Ui.Btn("", "Clear View", "Clear this view. The file is kept.", ClearLogView));
+        header.AddAction(Ui.Btn(Ui.OpenFile, "Open Log File", "Open the log file in Notepad (newest first).", OpenLogNewestFirst));
+        header.AddAction(Ui.Btn(Ui.Clear, "Clear View", "Clear this view. The file is kept.", ClearLogView));
+        _copyBtn = header.AddAction(Ui.Btn(CopyGlyph, "Copy", "Copy the selected lines (or every line in view when none is selected). Ctrl+C works too.", CopyLog, BtnKind.Primary));   // the main action: far right
+        _copyBtn.Text = "Copied"; _copyBtn.Glyph = Ui.Check; int copyW = _copyBtn.GetPreferredSize(Size.Empty).Width;      // one width for both states, so the button never changes size
+        _copyBtn.Text = "Copy"; _copyBtn.Glyph = CopyGlyph; _copyBtn.AutoSize = false; _copyBtn.Width = copyW;
+        _copiedTimer.Tick += (_, _) => { _copiedTimer.Stop(); _copyBtn.Text = "Copy"; _copyBtn.Glyph = CopyGlyph; _copyBtn.Invalidate(); };
 
-        // the filter on the left, the search on the right
-        var bar = new Panel { Dock = DockStyle.Top, Height = 6 + 38 + 16, BackColor = Ui.Bg };
-        _logKinds = new Segmented("All", "Switches", "Blocks", "Errors", "Commands") { Location = new Point(0, 6) };
-        Ui.Tip.SetToolTip(_logKinds, "Show only one kind of line. Blocks includes unblocks.");
-        _logKinds.SelectedChanged += i => { _logFilter = i; RefilterLog(); };
-        var field = new SearchBox("Search The Log…");
+        // the search and the filter sit in the list's header row, where the column names would be: search at the far left, the filter dropdown beside it
+        var head = new Panel { Dock = DockStyle.Top, Height = 6 + 36 + 8 + 1, BackColor = Ui.CardBg, Padding = new Padding(RowPad, 6, RowPad, 8) };
+        head.Paint += (_, e) => e.Graphics.DrawLine(Ui.Pen(Ui.Border), 0, head.Height - 1, head.Width, head.Height - 1);
+        var field = new SearchBox("Search The Log…") { Location = new Point(RowPad, 6) };
         var search = field.Input;
-        field.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        bar.Controls.Add(_logKinds); bar.Controls.Add(field);
-        bar.Resize += (_, _) => field.Location = new Point(Math.Max(_logKinds.Right + 12, bar.Width - field.Width), 6 + (_logKinds.Height - field.Height) / 2);
+        foreach (var k in new[] { "All", "Switches", "Blocks", "Errors", "Commands" }) _logKinds.Items.Add(k);
+        _logKinds.SelectedIndex = 0; _logKinds.Location = new Point(field.Right + 10, 6 + (field.Height - _logKinds.Height) / 2);
+        Ui.Tip.SetToolTip(_logKinds, "Show only one kind of line. Blocks includes unblocks.");
+        _logKinds.SelectedIndexChanged += (_, _) => { _logFilter = _logKinds.SelectedIndex; RefilterLog(); };
+        head.Controls.Add(field); head.Controls.Add(_logKinds);
         search.TextChanged += (_, _) => { _logSearchTimer.Stop(); _logSearchTimer.Start(); };
         search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) { search.Clear(); e.SuppressKeyPress = true; } };
         _logSearchTimer.Tick += (_, _) => { _logSearchTimer.Stop(); var q = search.Text.Trim(); if (q != _logQuery) { _logQuery = q; RefilterLog(); } };
@@ -47,7 +53,7 @@ sealed partial class MainForm
         // the list: one card without a header, the rows reach its edges
         var card = new Card("", "") { Dock = DockStyle.Fill, Margin = Padding.Empty };
         foreach (Control c in card.Controls) if (c != card.Body) c.Visible = false;     // the card's title row: this card has none
-        card.Body.Padding = new Padding(0, 2, 0, 2); card.Body.Controls.Add(_log);
+        card.Body.Padding = new Padding(0, 0, 0, 2); card.Body.Controls.Add(_log); card.Body.Controls.Add(head);   // docks in reverse: the header row is on top
         _log.ItemHeight = 38; _log.HorizontalScrollbar = false; _log.Font = Ui.MonoFont(9.4f); _log.BackColor = Ui.CardBg;
         _log.DrawItem += DrawLogRow;
         _log.Resize += (_, _) => _log.Invalidate();     // the message ends in an ellipsis at the new width
@@ -65,7 +71,7 @@ sealed partial class MainForm
         foot.Controls.Add(_logCount); foot.Controls.Add(rotate);
 
         // docking: Fill first, then the edges; the last one added docks outermost
-        page.Controls.Add(card); page.Controls.Add(foot); page.Controls.Add(bar); page.Controls.Add(header);
+        page.Controls.Add(card); page.Controls.Add(foot); page.Controls.Add(header);
         UpdateLogCount();
         return page;
     }
@@ -115,7 +121,9 @@ sealed partial class MainForm
         var rows = _log.SelectedItems.Count > 0 ? _log.SelectedItems.Cast<LogRow>() : _log.Items.Cast<LogRow>();
         var text = string.Join("\r\n", rows);
         if (text.Length == 0) return;
-        try { Clipboard.SetText(text); } catch { }      // the clipboard can be held by another program for a moment
+        try { Clipboard.SetText(text); } catch { return; }      // the clipboard can be held by another program for a moment
+        _copyBtn.Text = "Copied"; _copyBtn.Glyph = Ui.Check; _copyBtn.Invalidate();
+        _copiedTimer.Stop(); _copiedTimer.Start();
     }
 
     /// <summary>The setting changed: remember it, and shorten what is on screen right away if it is now too long.</summary>

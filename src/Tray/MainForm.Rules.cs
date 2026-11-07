@@ -5,33 +5,29 @@ using NetworkAutoSwitch.Core;
 
 namespace NetworkAutoSwitch.Tray;
 
-// Backup Rules page (was Policy): the global trigger, the rules editor and the shared status line.
+// Backup Rules page (was Policy): the rules editor and the shared status line. (The global trigger card lives on Settings.)
 sealed partial class MainForm
 {
     // ---------- Backup Rules ----------
-    /// <summary>Header (with the program picker), the global trigger card, then the rule list and the rule editor side by side.
+    /// <summary>Header (with the program picker), then the rule list and the rule editor side by side.
     /// The page scrolls (without a scrollbar) when the window is too small for the editor.</summary>
     Control PolicyPage()
     {
         var page = new ScrollSurface { MinContentHeight = 900 };
         page.Content.Padding = Page().Padding;
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Ui.Bg, Margin = new Padding(0) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Ui.Bg, Margin = new Padding(0) };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));                                        // header
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, GlobalTriggerCard.PreferredHeight + Ui.Gap)); // global trigger
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));                                        // rule list + editor
 
         var header = new PageHeader("Backup Rules") { Dock = DockStyle.Fill, Margin = new Padding(0, 0, Ui.Gap, 0) };
 
-        // the editor reads the global trigger, so they share this page (a control has one parent: Settings no longer shows it)
-        _global.Dock = DockStyle.Fill; _global.Margin = new Padding(0, 0, Ui.Gap, Ui.Gap);
-
         _editor.Dock = DockStyle.Fill; _editor.Margin = new Padding(0);
-        _editor.AddAction(_rulesSave = Ui.Btn(Ui.Check, "Save And Apply", "Check every rule and the global trigger, save them and apply them now.", SavePolicy, BtnKind.Primary));
+        _editor.AddAction(_rulesSave = Ui.Btn(Ui.Check, "Save And Apply", "Check every rule, save them and apply them now. (The global trigger is on the Settings page and applies by itself.)", SavePolicy, BtnKind.Primary));
         _editor.AddAction(Ui.Btn(Ui.Code, "", "Edit As JSON: the same rules as text (for advanced use). Nothing is saved until you click Save And Apply.", EditJson));
         _editor.AddAction(_rulesRevert = Ui.Btn(Ui.Undo, "", "Revert: discard unsaved changes.", RevertAll));
         _policyStatus.Add(_editor.Status);
 
-        grid.Controls.Add(header, 0, 0); grid.Controls.Add(_global, 0, 1); grid.Controls.Add(_editor, 0, 2);
+        grid.Controls.Add(header, 0, 0); grid.Controls.Add(_editor, 0, 1);
         page.Content.Controls.Add(grid);
         return page;
     }
@@ -74,6 +70,21 @@ sealed partial class MainForm
 
     /// <summary>A save is running: Save And Apply shows a spinner and ignores clicks, Revert is disabled.</summary>
     void SetRulesSaving(bool on) { if (_rulesSave is not null) _rulesSave.Busy = on; if (_rulesRevert is not null) _rulesRevert.Enabled = !on; }
+
+    /// <summary>The global trigger changed on Settings: writes ONLY that number into the saved policy (rule edits you have not saved stay unsaved) and applies it.</summary>
+    void SaveGlobalTrigger()
+    {
+        try
+        {
+            var p = BackupPolicy.Load(_policyPath);
+            var json = BackupPolicy.ToJson(new PolicyFile(p.BackupRules, new WatchDefaults(_global.MbValue(), _global.WindowSeconds())));
+            BackupPolicy.Parse(json);
+            File.Copy(_policyPath, _policyPath + ".bak", true);
+            File.WriteAllText(_policyPath, json);
+            Task.Run(() => { try { _engine.ReloadPolicy(); } catch (Exception e) { OnUi(() => Say("Saved, but applying failed: " + e.Message, true)); } });
+        }
+        catch (Exception e) { Say("Global trigger not saved. " + e.Message, true); }
+    }
 
     void SavePolicy()
     {
